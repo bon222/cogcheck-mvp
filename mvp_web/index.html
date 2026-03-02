@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CogCheck MVP - Game 1</title>
+  <link rel="stylesheet" href="/mvp/styles.css" />
+</head>
+<body>
+  <main class="container">
+    <h1>CogCheck MVP - Corner Basket Swipe</h1>
+
+    <section class="card" id="profileCard">
+      <h2>1) Create Profile</h2>
+      <label>First Name <input id="firstName" type="text" /></label>
+      <label>Last Name <input id="lastName" type="text" /></label>
+      <label>Backend URL <input id="backendUrl" type="text" value="" /></label>
+      <button id="saveProfileBtn">Save Profile</button>
+      <button id="switchUserBtn" class="secondary">Switch User (new profile)</button>
+      <p id="profileStatus" class="status"></p>
+    </section>
+
+    <section class="card">
+      <h2>2) Baseline Status</h2>
+      <p id="baselineBanner" class="banner"></p>
+      <p id="baselineStatus">Not loaded yet.</p>
+      <button id="refreshBaselineBtn">Refresh Baseline</button>
+    </section>
+
+    <section class="card">
+      <h2>3) Game</h2>
+      <p>All 4 balls appear with random spawn timing and random movement. Drag any ball into any open corner in any order. Completed corners disappear.</p>
+      <div id="labelFields" class="labels">
+        <h3>Before normal (non-baseline) runs</h3>
+        <label>Drinking level
+          <select id="alcoholStatus">
+            <option value="no">No alcohol</option>
+            <option value="a_couple">A couple drinks</option>
+            <option value="yes">Yes (more than a couple)</option>
+          </select>
+        </label>
+        <label>Hours slept
+          <input id="sleepHours" type="number" min="0" max="24" step="0.5" value="8" />
+        </label>
+      </div>
+      <button id="startBtn">Start Game</button>
+      <p id="gameStatus" class="status"></p>
+      <canvas id="gameCanvas" width="360" height="640"></canvas>
+    </section>
+
+    <section class="card">
+      <h2>4) Last Submission</h2>
+      <pre id="lastSubmission">No attempt submitted yet.</pre>
+    </section>
+  </main>
+  <script src="/mvp/app.js"></script>
+</body>
+</html>
