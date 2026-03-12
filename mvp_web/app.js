@@ -1,4 +1,3 @@
-const GAME_TYPE = "corner_basket_swipe";
 const BASELINE_REQUIRED = 3;
 const GAME_MS = 30000;
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
@@ -29,8 +28,6 @@ const els = {
   downloadUsers: document.getElementById("downloadUsers"),
   downloadAttempts: document.getElementById("downloadAttempts"),
   downloadRaw: document.getElementById("downloadRaw"),
-  downloadLabels: document.getElementById("downloadLabels"),
-  downloadSessions: document.getElementById("downloadSessions"),
   adminStatus: document.getElementById("adminStatus"),
   adminCard: document.getElementById("adminCard"),
   canvas: document.getElementById("gameCanvas"),
@@ -40,7 +37,6 @@ const ctx = els.canvas.getContext("2d");
 
 let state = {
   backendUrl: localStorage.getItem("backendUrl") || DEFAULT_BACKEND_URL,
-  deviceUserId: localStorage.getItem("deviceUserId") || crypto.randomUUID(),
   userId: "",
   sessionId: "",
   sessionExpiresAt: 0,
@@ -77,7 +73,6 @@ function resizeCanvas() {
 
 function persistSession() {
   localStorage.setItem("backendUrl", state.backendUrl);
-  localStorage.setItem("deviceUserId", state.deviceUserId);
   localStorage.setItem("userId", state.userId);
   localStorage.setItem("sessionId", state.sessionId);
   localStorage.setItem("sessionExpiresAt", String(state.sessionExpiresAt));
@@ -95,7 +90,6 @@ function loadSession() {
 }
 
 function clearSessionForNewUser() {
-  state.deviceUserId = crypto.randomUUID();
   state.userId = "";
   state.sessionId = "";
   state.sessionExpiresAt = 0;
@@ -465,7 +459,7 @@ async function refreshBaseline() {
     els.baselineStatus.textContent = "Save profile first.";
     return;
   }
-  const res = await fetch(`${state.backendUrl}/baseline/${state.userId}/${GAME_TYPE}`);
+  const res = await fetch(`${state.backendUrl}/baseline/${state.userId}`);
   const body = await res.json();
   if (!res.ok) throw new Error(body.detail || "Baseline fetch failed");
   state.baselineCompleted = body.baseline_attempts_completed;
@@ -500,7 +494,6 @@ async function saveProfile() {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      device_user_id: state.deviceUserId,
       first_name: firstName,
       last_name: lastName,
     }),
@@ -539,37 +532,20 @@ function startGame() {
     els.gameStatus.textContent = "Save profile first.";
     return;
   }
-  if (Date.now() > state.sessionExpiresAt || !state.sessionId) {
-    createSession()
-      .then(() => runGame())
-      .catch((err) => {
-        els.gameStatus.textContent = `Session error: ${err.message}`;
-      });
-    return;
-  }
   runGame();
 }
 
-async function submitLabelIfNeeded(attemptId) {
+async function submitLabelIfNeeded() {
   if (state.baselineCompleted < BASELINE_REQUIRED) return;
   const sleepValue = Number(els.sleepHours.value);
   if (Number.isNaN(sleepValue) || sleepValue < 0 || sleepValue > 24) {
     throw new Error("Sleep hours must be between 0 and 24.");
   }
 
-  const res = await fetch(`${state.backendUrl}/labels`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      user_id: state.userId,
-      session_id: state.sessionId || null,
-      attempt_id: attemptId || null,
-      alcohol_status: els.alcoholStatus.value,
-      sleep_hours: sleepValue,
-    }),
-  });
-  const body = await res.json();
-  if (!res.ok) throw new Error(body.detail || "Label submit failed");
+  return {
+    alcohol_status: els.alcoholStatus.value,
+    sleep_hours: sleepValue,
+  };
 }
 
 function buildSummary(durationMs) {
@@ -612,18 +588,17 @@ async function finishGame(success) {
 
   const durationMs = Math.max(1, Math.floor(state.endTs - state.startTs));
   const baselineFlag = state.baselineCompleted < BASELINE_REQUIRED;
+  const labelPayload = await submitLabelIfNeeded();
 
   const payload = {
     user_id: state.userId,
-    session_id: state.sessionId || null,
-    game_type: GAME_TYPE,
     baseline_flag: baselineFlag,
-    started_at: nowIso(Date.now() - durationMs),
-    ended_at: nowIso(Date.now()),
     duration_ms: durationMs,
     success,
     summary: buildSummary(durationMs),
     raw_events: state.events,
+    alcohol_status: labelPayload?.alcohol_status ?? null,
+    sleep_hours: labelPayload?.sleep_hours ?? null,
   };
 
   try {
@@ -635,7 +610,6 @@ async function finishGame(success) {
     const body = await res.json();
     if (!res.ok) throw new Error(body.detail || "Attempt submit failed");
 
-    await submitLabelIfNeeded(body.id);
     await refreshBaseline();
     els.gameStatus.textContent = baselineFlag
       ? `Baseline run submitted (${durationMs}ms).`
@@ -659,8 +633,6 @@ function bindEvents() {
   els.downloadUsers.addEventListener("click", () => downloadCsv("users"));
   els.downloadAttempts.addEventListener("click", () => downloadCsv("attempts"));
   els.downloadRaw.addEventListener("click", () => downloadCsv("raw_events"));
-  els.downloadLabels.addEventListener("click", () => downloadCsv("labels"));
-  els.downloadSessions.addEventListener("click", () => downloadCsv("sessions"));
 }
 
 async function clearDatabase() {

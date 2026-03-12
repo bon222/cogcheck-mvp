@@ -6,22 +6,22 @@ from . import models, schemas
 BASELINE_REQUIRED_ATTEMPTS = 3
 
 
-def get_user_by_device_user_id(db: Session, device_user_id: str) -> models.User | None:
-    return db.scalar(select(models.User).where(models.User.device_user_id == device_user_id))
-
-
 def get_user(db: Session, user_id: str) -> models.User | None:
     return db.scalar(select(models.User).where(models.User.id == user_id))
 
 
+def get_user_by_name(db: Session, first_name: str, last_name: str) -> models.User | None:
+    return db.scalar(
+        select(models.User)
+        .where(models.User.first_name == first_name.strip())
+        .where(models.User.last_name == last_name.strip())
+    )
+
+
 def create_or_update_user(db: Session, payload: schemas.UserCreate) -> models.User:
-    user = get_user_by_device_user_id(db, payload.device_user_id)
+    user = get_user_by_name(db, payload.first_name, payload.last_name)
     if user is None:
-        user = models.User(
-            device_user_id=payload.device_user_id,
-            first_name=payload.first_name.strip(),
-            last_name=payload.last_name.strip(),
-        )
+        user = models.User(first_name=payload.first_name.strip(), last_name=payload.last_name.strip())
         db.add(user)
     else:
         user.first_name = payload.first_name.strip()
@@ -32,60 +32,48 @@ def create_or_update_user(db: Session, payload: schemas.UserCreate) -> models.Us
     return user
 
 
-def create_session(db: Session, payload: schemas.SessionCreate) -> models.GameSession:
-    session = models.GameSession(user_id=payload.user_id, baseline_mode=payload.baseline_mode)
-    db.add(session)
-    db.commit()
-    db.refresh(session)
-    return session
-
-
-def count_baseline_attempts(db: Session, user_id: str, game_type: str) -> int:
+def count_baseline_attempts(db: Session, user_id: str) -> int:
     stmt = (
         select(func.count(models.Attempt.id))
         .where(models.Attempt.user_id == user_id)
-        .where(models.Attempt.game_type == game_type)
         .where(models.Attempt.baseline_flag.is_(True))
     )
     return int(db.scalar(stmt) or 0)
 
 
-def count_normal_attempts(db: Session, user_id: str, game_type: str) -> int:
+def count_normal_attempts(db: Session, user_id: str) -> int:
     stmt = (
         select(func.count(models.Attempt.id))
         .where(models.Attempt.user_id == user_id)
-        .where(models.Attempt.game_type == game_type)
         .where(models.Attempt.baseline_flag.is_(False))
     )
     return int(db.scalar(stmt) or 0)
 
 
 def create_attempt(db: Session, payload: schemas.AttemptCreate) -> models.Attempt:
-    baseline_completed = count_baseline_attempts(db, payload.user_id, payload.game_type)
+    baseline_completed = count_baseline_attempts(db, payload.user_id)
 
     if not payload.baseline_flag and baseline_completed < BASELINE_REQUIRED_ATTEMPTS:
         raise ValueError(
-            f"Baseline incomplete for {payload.game_type}: "
+            "Baseline incomplete: "
             f"{baseline_completed}/{BASELINE_REQUIRED_ATTEMPTS} attempts completed."
         )
 
     attempt_number = (
         baseline_completed + 1
         if payload.baseline_flag
-        else count_normal_attempts(db, payload.user_id, payload.game_type) + 1
+        else count_normal_attempts(db, payload.user_id) + 1
     )
 
     attempt = models.Attempt(
         user_id=payload.user_id,
-        session_id=payload.session_id,
-        game_type=payload.game_type,
         baseline_flag=payload.baseline_flag,
         attempt_number=attempt_number,
-        started_at=payload.started_at,
-        ended_at=payload.ended_at,
         duration_ms=payload.duration_ms,
         success=payload.success,
         summary=payload.summary,
+        alcohol_status=payload.alcohol_status,
+        sleep_hours=payload.sleep_hours,
     )
     db.add(attempt)
     db.flush()
@@ -108,17 +96,3 @@ def create_attempt(db: Session, payload: schemas.AttemptCreate) -> models.Attemp
     db.commit()
     db.refresh(attempt)
     return attempt
-
-
-def create_label(db: Session, payload: schemas.LabelCreate) -> models.Label:
-    label = models.Label(
-        user_id=payload.user_id,
-        session_id=payload.session_id,
-        attempt_id=payload.attempt_id,
-        alcohol_status=payload.alcohol_status,
-        sleep_hours=payload.sleep_hours,
-    )
-    db.add(label)
-    db.commit()
-    db.refresh(label)
-    return label
