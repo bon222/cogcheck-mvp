@@ -40,17 +40,23 @@ def health() -> dict[str, str]:
 
 @app.get("/")
 def web_home() -> FileResponse:
-    return FileResponse(WEB_DIR / "index.html")
+    response = FileResponse(WEB_DIR / "index.html")
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
 
 
 @app.get("/app.js")
 def web_app_js() -> FileResponse:
-    return FileResponse(WEB_DIR / "app.js")
+    response = FileResponse(WEB_DIR / "app.js")
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
 
 
 @app.get("/styles.css")
 def web_styles() -> FileResponse:
-    return FileResponse(WEB_DIR / "styles.css")
+    response = FileResponse(WEB_DIR / "styles.css")
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
 
 
 def require_admin_token(token: str | None) -> None:
