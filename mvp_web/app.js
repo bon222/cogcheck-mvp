@@ -25,6 +25,7 @@ const els = {
   gameStatus: document.getElementById("gameStatus"),
   adminToken: document.getElementById("adminToken"),
   clearDbBtn: document.getElementById("clearDbBtn"),
+  resetDbBtn: document.getElementById("resetDbBtn"),
   downloadUsers: document.getElementById("downloadUsers"),
   downloadAttempts: document.getElementById("downloadAttempts"),
   downloadRaw: document.getElementById("downloadRaw"),
@@ -642,9 +643,33 @@ function bindEvents() {
   els.canvas.addEventListener("pointerup", pointerUp);
   els.canvas.addEventListener("pointercancel", pointerUp);
   els.clearDbBtn.addEventListener("click", clearDatabase);
+  els.resetDbBtn.addEventListener("click", resetDatabase);
   els.downloadUsers.addEventListener("click", () => downloadCsv("users"));
   els.downloadAttempts.addEventListener("click", () => downloadCsv("attempts"));
   els.downloadRaw.addEventListener("click", () => downloadCsv("raw_events"));
+}
+
+async function resetDatabase() {
+  const token = els.adminToken.value.trim();
+  if (!token) {
+    els.adminStatus.textContent = "Enter admin token first.";
+    return;
+  }
+  if (!confirm("This will drop and recreate the schema. All data will be lost. Continue?")) return;
+
+  try {
+    const res = await fetch(`${state.backendUrl}/admin/reset?token=${encodeURIComponent(token)}`, {
+      method: "POST",
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || "Reset failed");
+    els.adminStatus.textContent = "Schema reset complete.";
+    state.baselineCompleted = 0;
+    updateBaselineProgress();
+    updateStartButtonLabel();
+  } catch (err) {
+    els.adminStatus.textContent = `Reset error: ${err.message}`;
+  }
 }
 
 async function clearDatabase() {

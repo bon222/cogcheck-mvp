@@ -133,6 +133,7 @@ Quick post-deploy checks:
 
 Set `ADMIN_TOKEN` in Render env vars to enable admin actions in the UI:
 - Clear database
+- Reset schema (drops + recreates tables)
 - Download CSV exports
 
 In the web app, enter the token in the Admin section before using buttons.

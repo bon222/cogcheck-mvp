@@ -70,6 +70,14 @@ def admin_clear(token: str | None = None, db: Session = Depends(get_db)) -> dict
     return {"status": "cleared"}
 
 
+@app.post("/admin/reset")
+def admin_reset(token: str | None = None) -> dict[str, str]:
+    require_admin_token(token)
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    return {"status": "reset"}
+
+
 @app.get("/admin/export/{table_name}")
 def admin_export(table_name: str, token: str | None = None, db: Session = Depends(get_db)) -> StreamingResponse:
     require_admin_token(token)
