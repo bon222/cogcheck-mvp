@@ -460,7 +460,13 @@ async function refreshBaseline() {
     return;
   }
   const res = await fetch(`${state.backendUrl}/baseline/${state.userId}`);
-  const body = await res.json();
+  const rawText = await res.text();
+  let body = {};
+  try {
+    body = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    body = { detail: rawText || "Baseline fetch failed" };
+  }
   if (!res.ok) throw new Error(body.detail || "Baseline fetch failed");
   state.baselineCompleted = body.baseline_attempts_completed;
   els.baselineStatus.textContent = `Baseline attempts: ${body.baseline_attempts_completed}/${body.required_attempts}`;
@@ -498,7 +504,13 @@ async function saveProfile() {
       last_name: lastName,
     }),
   });
-  const body = await res.json();
+  const rawText = await res.text();
+  let body = {};
+  try {
+    body = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    body = { detail: rawText || "Profile save failed" };
+  }
   if (!res.ok) {
     throw new Error(body.detail || "Profile save failed");
   }
