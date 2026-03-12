@@ -661,14 +661,20 @@ async function resetDatabase() {
     const res = await fetch(`${state.backendUrl}/admin/reset?token=${encodeURIComponent(token)}`, {
       method: "POST",
     });
-    const body = await res.json();
+    const rawText = await res.text();
+    let body = {};
+    try {
+      body = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      body = { detail: rawText || "Reset failed" };
+    }
     if (!res.ok) throw new Error(body.detail || "Reset failed");
     els.adminStatus.textContent = "Schema reset complete.";
     state.baselineCompleted = 0;
     updateBaselineProgress();
     updateStartButtonLabel();
   } catch (err) {
-    els.adminStatus.textContent = `Reset error: ${err.message}`;
+    els.adminStatus.textContent = `Reset error (v3): ${err.message}`;
   }
 }
 
@@ -684,14 +690,20 @@ async function clearDatabase() {
     const res = await fetch(`${state.backendUrl}/admin/clear?token=${encodeURIComponent(token)}`, {
       method: "POST",
     });
-    const body = await res.json();
+    const rawText = await res.text();
+    let body = {};
+    try {
+      body = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      body = { detail: rawText || "Clear failed" };
+    }
     if (!res.ok) throw new Error(body.detail || "Clear failed");
     els.adminStatus.textContent = "Database cleared.";
     state.baselineCompleted = 0;
     updateBaselineProgress();
     updateStartButtonLabel();
   } catch (err) {
-    els.adminStatus.textContent = `Clear error: ${err.message}`;
+    els.adminStatus.textContent = `Clear error (v3): ${err.message}`;
   }
 }
 
@@ -705,8 +717,13 @@ function downloadCsv(table) {
   fetch(url)
     .then((res) => {
       if (!res.ok) {
-        return res.json().then((body) => {
-          throw new Error(body.detail || "Download failed");
+        return res.text().then((text) => {
+          try {
+            const body = text ? JSON.parse(text) : {};
+            throw new Error(body.detail || "Download failed");
+          } catch {
+            throw new Error(text || "Download failed");
+          }
         });
       }
       return res.blob();
@@ -723,7 +740,7 @@ function downloadCsv(table) {
       els.adminStatus.textContent = `Downloaded ${table}.csv`;
     })
     .catch((err) => {
-      els.adminStatus.textContent = `Download error: ${err.message}`;
+      els.adminStatus.textContent = `Download error (v3): ${err.message}`;
     });
 }
 
