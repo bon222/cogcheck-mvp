@@ -129,6 +129,14 @@ Quick post-deploy checks:
 - `https://<your-service>.onrender.com/health` should return `{"status":"ok"}`
 - `https://<your-service>.onrender.com` should open the game page
 
+## Admin tools (optional)
+
+Set `ADMIN_TOKEN` in Render env vars to enable admin actions in the UI:
+- Clear database
+- Download CSV exports
+
+In the web app, enter the token in the Admin section before using buttons.
+
 ## iOS setup (optional next step)
 
 1. Open [CogCheck.xcodeproj](/Users/aaron/Desktop/YU%20Spring%202026/Predictive%20Models/Final%20Project/ios/CogCheck/CogCheck.xcodeproj).
@@ -148,33 +156,14 @@ Note: If Xcode still shows signing prompts, use simulator only for now and conti
 
 Payload examples are in `docs/game1_api_examples.md`.
 
-## Physical database access (Excel + Python)
+## Database exports (CSV)
 
-Database file (physical on disk):
-- [cogcheck.db](/Users/aaron/Desktop/YU%20Spring%202026/Predictive%20Models/Final%20Project/backend/cogcheck.db)
-
-Export all tables to Excel-ready CSV files:
-
-```bash
-"/Users/aaron/Desktop/YU Spring 2026/Predictive Models/Final Project/backend/.venv/bin/python" \
-"/Users/aaron/Desktop/YU Spring 2026/Predictive Models/Final Project/backend/tools/export_sqlite_to_csv.py"
-```
-
-Exports are written to:
-- `/Users/aaron/Desktop/YU Spring 2026/Predictive Models/Final Project/backend/exports/users.csv`
-- `/Users/aaron/Desktop/YU Spring 2026/Predictive Models/Final Project/backend/exports/attempts.csv`
-- `/Users/aaron/Desktop/YU Spring 2026/Predictive Models/Final Project/backend/exports/raw_events.csv`
-- `/Users/aaron/Desktop/YU Spring 2026/Predictive Models/Final Project/backend/exports/sessions.csv`
-- `/Users/aaron/Desktop/YU Spring 2026/Predictive Models/Final Project/backend/exports/labels.csv`
-
-Python quick check:
-
-```python
-import sqlite3
-db = "/Users/aaron/Desktop/YU Spring 2026/Predictive Models/Final Project/backend/cogcheck.db"
-con = sqlite3.connect(db)
-print(con.execute("select count(*) from attempts").fetchone())
-```
+Use the in-app Admin section (available only at `?admin=1` and protected by `ADMIN_TOKEN`) to download CSVs:
+- `users.csv`
+- `attempts.csv`
+- `raw_events.csv`
+- `labels.csv`
+- `sessions.csv`
 
 ## Next step
 

@@ -8,13 +8,14 @@
 </head>
 <body>
   <main class="container">
-    <h1>CogCheck MVP - Corner Basket Swipe</h1>
+    <h1>CogCheck Checkpoint</h1>
+    <p class="lead">Quick cognitive check: complete the corner-ball challenge.</p>
 
     <section class="card" id="profileCard">
-      <h2>1) Create Profile</h2>
+      <h2>1) Profile</h2>
+      <p id="loggedInUser" class="logged-in">Not logged in.</p>
       <label>First Name <input id="firstName" type="text" /></label>
       <label>Last Name <input id="lastName" type="text" /></label>
-      <label>Backend URL <input id="backendUrl" type="text" value="" /></label>
       <button id="saveProfileBtn">Save Profile</button>
       <button id="switchUserBtn" class="secondary">Switch User (new profile)</button>
       <p id="profileStatus" class="status"></p>
@@ -23,15 +24,20 @@
     <section class="card">
       <h2>2) Baseline Status</h2>
       <p id="baselineBanner" class="banner"></p>
+      <div class="progress-wrap" aria-label="Baseline progress">
+        <div id="baselineProgressFill" class="progress-fill"></div>
+      </div>
+      <p id="baselineProgressText" class="progress-text">0 of 3 complete</p>
       <p id="baselineStatus">Not loaded yet.</p>
       <button id="refreshBaselineBtn">Refresh Baseline</button>
+      <p id="nextStep" class="next-step"></p>
     </section>
 
     <section class="card">
       <h2>3) Game</h2>
-      <p>All 4 balls appear with random spawn timing and random movement. Drag any ball into any open corner in any order. Completed corners disappear.</p>
+      <p>All 4 balls appear at random times and move randomly. Drag any ball to any open corner. Each corner can be used once.</p>
       <div id="labelFields" class="labels">
-        <h3>Before normal (non-baseline) runs</h3>
+        <h3>Required before normal runs</h3>
         <label>Drinking level
           <select id="alcoholStatus">
             <option value="no">No alcohol</option>
@@ -48,9 +54,19 @@
       <canvas id="gameCanvas" width="360" height="640"></canvas>
     </section>
 
-    <section class="card">
-      <h2>4) Last Submission</h2>
-      <pre id="lastSubmission">No attempt submitted yet.</pre>
+    <section class="card hidden" id="adminCard">
+      <h2>Admin</h2>
+      <p class="admin-note">Only for you. This clears data and downloads CSV.</p>
+      <label>Admin Token <input id="adminToken" type="password" /></label>
+      <div class="admin-actions">
+        <button id="clearDbBtn" class="danger">Clear Database</button>
+        <button id="downloadUsers">Download users.csv</button>
+        <button id="downloadAttempts">Download attempts.csv</button>
+        <button id="downloadRaw">Download raw_events.csv</button>
+        <button id="downloadLabels">Download labels.csv</button>
+        <button id="downloadSessions">Download sessions.csv</button>
+      </div>
+      <p id="adminStatus" class="status"></p>
     </section>
   </main>
   <script src="/mvp/app.js"></script>

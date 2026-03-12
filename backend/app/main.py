@@ -1,8 +1,11 @@
 from pathlib import Path
 
+import csv
+import io
+import os
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
@@ -13,6 +16,8 @@ from .database import Base, engine, get_db
 app = FastAPI(title="CogCheck API", version="0.1.0")
 ROOT_DIR = Path(__file__).resolve().parents[2]
 WEB_DIR = ROOT_DIR / "mvp_web"
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
+ADMIN_TABLES = {"users", "sessions", "attempts", "raw_events", "labels"}
 
 app.add_middleware(
     CORSMiddleware,
@@ -39,6 +44,55 @@ def health() -> dict[str, str]:
 @app.get("/")
 def web_home() -> FileResponse:
     return FileResponse(WEB_DIR / "index.html")
+
+
+def require_admin_token(token: str | None) -> None:
+    if not ADMIN_TOKEN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin token not configured.")
+    if token != ADMIN_TOKEN:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid admin token.")
+
+
+@app.post("/admin/clear")
+def admin_clear(token: str | None = None, db: Session = Depends(get_db)) -> dict[str, str]:
+    require_admin_token(token)
+    db.execute(models.RawEvent.__table__.delete())
+    db.execute(models.Label.__table__.delete())
+    db.execute(models.Attempt.__table__.delete())
+    db.execute(models.GameSession.__table__.delete())
+    db.execute(models.User.__table__.delete())
+    db.commit()
+    return {"status": "cleared"}
+
+
+@app.get("/admin/export/{table_name}")
+def admin_export(table_name: str, token: str | None = None, db: Session = Depends(get_db)) -> StreamingResponse:
+    require_admin_token(token)
+    if table_name not in ADMIN_TABLES:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown table.")
+
+    table_map = {
+        "users": models.User.__table__,
+        "sessions": models.GameSession.__table__,
+        "attempts": models.Attempt.__table__,
+        "raw_events": models.RawEvent.__table__,
+        "labels": models.Label.__table__,
+    }
+    result = db.execute(table_map[table_name].select())
+    rows = result.fetchall()
+    headers = result.keys()
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(headers)
+    writer.writerows(rows)
+    buffer.seek(0)
+
+    return StreamingResponse(
+        buffer,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={table_name}.csv"},
+    )
 
 
 @app.post("/users/register", response_model=schemas.UserOut)

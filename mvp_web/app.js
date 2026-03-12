@@ -10,19 +10,30 @@ const DEFAULT_BACKEND_URL =
 const els = {
   firstName: document.getElementById("firstName"),
   lastName: document.getElementById("lastName"),
-  backendUrl: document.getElementById("backendUrl"),
   saveProfileBtn: document.getElementById("saveProfileBtn"),
   switchUserBtn: document.getElementById("switchUserBtn"),
+  loggedInUser: document.getElementById("loggedInUser"),
   profileStatus: document.getElementById("profileStatus"),
   baselineBanner: document.getElementById("baselineBanner"),
+  baselineProgressFill: document.getElementById("baselineProgressFill"),
+  baselineProgressText: document.getElementById("baselineProgressText"),
   baselineStatus: document.getElementById("baselineStatus"),
   refreshBaselineBtn: document.getElementById("refreshBaselineBtn"),
+  nextStep: document.getElementById("nextStep"),
   labelFields: document.getElementById("labelFields"),
   alcoholStatus: document.getElementById("alcoholStatus"),
   sleepHours: document.getElementById("sleepHours"),
   startBtn: document.getElementById("startBtn"),
   gameStatus: document.getElementById("gameStatus"),
-  lastSubmission: document.getElementById("lastSubmission"),
+  adminToken: document.getElementById("adminToken"),
+  clearDbBtn: document.getElementById("clearDbBtn"),
+  downloadUsers: document.getElementById("downloadUsers"),
+  downloadAttempts: document.getElementById("downloadAttempts"),
+  downloadRaw: document.getElementById("downloadRaw"),
+  downloadLabels: document.getElementById("downloadLabels"),
+  downloadSessions: document.getElementById("downloadSessions"),
+  adminStatus: document.getElementById("adminStatus"),
+  adminCard: document.getElementById("adminCard"),
   canvas: document.getElementById("gameCanvas"),
 };
 
@@ -49,6 +60,7 @@ let state = {
   lastFrameTs: 0,
   completionLog: [],
   ballFirstTouchMs: {},
+  freePointerId: null,
 };
 
 function resizeCanvas() {
@@ -96,6 +108,9 @@ function clearSessionForNewUser() {
   els.profileStatus.textContent = "Switched user. Enter new name and save profile.";
   els.baselineStatus.textContent = "Not loaded yet.";
   els.baselineBanner.textContent = "Complete 3 baseline runs first.";
+  els.nextStep.textContent = "Next: Save profile, then complete baseline 3 times.";
+  updateLoggedInUser();
+  updateBaselineProgress();
   updateLabelVisibility();
 }
 
@@ -117,6 +132,26 @@ function appendEvent(eventType, x = null, y = null, payload = null) {
   });
 }
 
+function updateLoggedInUser() {
+  const first = localStorage.getItem("firstName") || "";
+  const last = localStorage.getItem("lastName") || "";
+  if (state.userId && first && last) {
+    els.loggedInUser.textContent = `Logged in as: ${first} ${last}`;
+    return;
+  }
+  els.loggedInUser.textContent = "Not logged in.";
+}
+
+function updateBaselineProgress() {
+  const percent = Math.max(0, Math.min(100, (state.baselineCompleted / BASELINE_REQUIRED) * 100));
+  els.baselineProgressFill.style.width = `${percent}%`;
+  els.baselineProgressText.textContent = `${state.baselineCompleted} of ${BASELINE_REQUIRED} baseline runs complete`;
+}
+
+function updateStartButtonLabel() {
+  els.startBtn.textContent = state.baselineCompleted < BASELINE_REQUIRED ? "Start Baseline Run" : "Start Normal Run";
+}
+
 function setupBaskets() {
   const size = 82;
   state.baskets = [
@@ -129,22 +164,63 @@ function setupBaskets() {
 
 function buildBalls() {
   const colors = ["#ef4444", "#3b82f6", "#22c55e", "#f97316"];
-  state.balls = Array.from({ length: 4 }).map((_, i) => {
-    const spawnDelayMs = Math.floor(Math.random() * 6000);
-    return {
+  const minDistanceFromCorner = 140;
+  const minBallDistance = 62;
+  const cornerCenters = state.baskets.map((b) => ({
+    x: b.x + b.w / 2,
+    y: b.y + b.h / 2,
+  }));
+
+  function validSpawnPoint(x, y, existing) {
+    const awayFromCorners = cornerCenters.every((c) => {
+      const dx = x - c.x;
+      const dy = y - c.y;
+      return Math.sqrt(dx * dx + dy * dy) >= minDistanceFromCorner;
+    });
+    if (!awayFromCorners) return false;
+
+    return existing.every((ball) => {
+      const dx = x - ball.x;
+      const dy = y - ball.y;
+      return Math.sqrt(dx * dx + dy * dy) >= minBallDistance;
+    });
+  }
+
+  const balls = [];
+  for (let i = 0; i < 4; i += 1) {
+    let x = 0;
+    let y = 0;
+    let found = false;
+    for (let tries = 0; tries < 60; tries += 1) {
+      const candidateX = 85 + Math.random() * (els.canvas.width - 170);
+      const candidateY = 120 + Math.random() * (els.canvas.height - 240);
+      if (validSpawnPoint(candidateX, candidateY, balls)) {
+        x = candidateX;
+        y = candidateY;
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      x = 120 + i * 34;
+      y = 210 + i * 22;
+    }
+    const spawnDelayMs = Math.floor(Math.random() * 4200);
+    balls.push({
       id: `ball_${i + 1}`,
       color: colors[i],
-      x: 100 + Math.random() * 160,
-      y: 140 + Math.random() * 360,
-      r: 22,
-      vx: (Math.random() * 140 + 50) * (Math.random() > 0.5 ? 1 : -1),
-      vy: (Math.random() * 140 + 50) * (Math.random() > 0.5 ? 1 : -1),
+      x,
+      y,
+      r: 25,
+      vx: (Math.random() * 170 + 80) * (Math.random() > 0.5 ? 1 : -1),
+      vy: (Math.random() * 170 + 80) * (Math.random() > 0.5 ? 1 : -1),
       spawnDelayMs,
       spawned: false,
       completed: false,
       assignedCornerId: null,
-    };
-  });
+    });
+  }
+  state.balls = balls;
 }
 
 function resetGameState() {
@@ -181,7 +257,7 @@ function draw() {
     ctx.strokeRect(basket.x, basket.y, basket.w, basket.h);
     ctx.font = "12px sans-serif";
     ctx.fillStyle = "#111";
-    ctx.fillText(basket.id, basket.x + 4, basket.y + 14);
+    ctx.fillText(basket.id, basket.x + 5, basket.y + 15);
   }
 
   for (const ball of state.balls) {
@@ -313,41 +389,63 @@ function pointerDown(evt) {
   if (!state.running) return;
   const { x, y } = canvasPos(evt);
   const ball = pickBallAt(x, y);
-  if (!ball) return;
+  if (!ball) {
+    state.freePointerId = evt.pointerId;
+    appendEvent("touch_down", x, y, { ball_id: null, hit: false });
+    return;
+  }
 
   state.activePointerId = evt.pointerId;
   state.activeBallId = ball.id;
+  if (els.canvas.setPointerCapture) {
+    els.canvas.setPointerCapture(evt.pointerId);
+  }
   if (state.ballFirstTouchMs[ball.id] === undefined) {
     state.ballFirstTouchMs[ball.id] = Math.max(0, Math.floor(performance.now() - state.startTs));
   }
-  appendEvent("touch_down", x, y, { ball_id: ball.id });
+  appendEvent("touch_down", x, y, { ball_id: ball.id, hit: true });
 }
 
 function pointerMove(evt) {
   if (!state.running) return;
-  if (state.activePointerId !== evt.pointerId) return;
-  const ball = getActiveBall();
-  if (!ball || ball.completed) return;
-
   const { x, y } = canvasPos(evt);
-  ball.x = x;
-  ball.y = y;
-  appendEvent("touch_move", x, y, { ball_id: ball.id });
+  if (state.activePointerId === evt.pointerId) {
+    const ball = getActiveBall();
+    if (!ball || ball.completed) return;
+    ball.x = Math.max(ball.r, Math.min(els.canvas.width - ball.r, x));
+    ball.y = Math.max(ball.r, Math.min(els.canvas.height - ball.r, y));
+    appendEvent("touch_move", x, y, { ball_id: ball.id, hit: true });
 
-  const basket = findBasketForBall(ball);
-  if (basket) {
-    completeBall(ball, basket);
+    const basket = findBasketForBall(ball);
+    if (basket) {
+      completeBall(ball, basket);
+    }
+    return;
+  }
+
+  if (state.freePointerId === evt.pointerId) {
+    appendEvent("touch_move", x, y, { ball_id: null, hit: false });
   }
 }
 
 function pointerUp(evt) {
   if (!state.running) return;
-  if (state.activePointerId !== evt.pointerId) return;
   const { x, y } = canvasPos(evt);
-  const activeBall = getActiveBall();
-  appendEvent("touch_up", x, y, { ball_id: activeBall ? activeBall.id : null });
-  state.activePointerId = null;
-  state.activeBallId = null;
+  if (state.activePointerId === evt.pointerId) {
+    const activeBall = getActiveBall();
+    appendEvent("touch_up", x, y, { ball_id: activeBall ? activeBall.id : null, hit: true });
+    if (els.canvas.releasePointerCapture) {
+      els.canvas.releasePointerCapture(evt.pointerId);
+    }
+    state.activePointerId = null;
+    state.activeBallId = null;
+    return;
+  }
+
+  if (state.freePointerId === evt.pointerId) {
+    appendEvent("touch_up", x, y, { ball_id: null, hit: false });
+    state.freePointerId = null;
+  }
 }
 
 async function createSession() {
@@ -373,11 +471,15 @@ async function refreshBaseline() {
   if (!res.ok) throw new Error(body.detail || "Baseline fetch failed");
   state.baselineCompleted = body.baseline_attempts_completed;
   els.baselineStatus.textContent = `Baseline attempts: ${body.baseline_attempts_completed}/${body.required_attempts}`;
+  updateBaselineProgress();
+  updateStartButtonLabel();
   if (body.baseline_complete) {
     els.baselineBanner.textContent = "Baseline complete. You can now play normal runs. Before each run, enter drinking and sleep levels.";
+    els.nextStep.textContent = "Next: Enter drinking + sleep, then press Start Game.";
   } else {
     const left = body.required_attempts - body.baseline_attempts_completed;
     els.baselineBanner.textContent = `Baseline required: complete ${left} more run(s) while you are at your best cognitive state.`;
+    els.nextStep.textContent = `Next: Press Start Game and finish ${left} more baseline run(s).`;
   }
   updateLabelVisibility();
 }
@@ -390,7 +492,6 @@ function updateLabelVisibility() {
 async function saveProfile() {
   const firstName = els.firstName.value.trim();
   const lastName = els.lastName.value.trim();
-  state.backendUrl = els.backendUrl.value.trim().replace(/\/$/, "");
   if (!firstName || !lastName) {
     els.profileStatus.textContent = "Enter first and last name.";
     return;
@@ -413,6 +514,7 @@ async function saveProfile() {
   localStorage.setItem("firstName", firstName);
   localStorage.setItem("lastName", lastName);
   persistSession();
+  updateLoggedInUser();
   els.profileStatus.textContent = `Profile saved for ${body.first_name} ${body.last_name}`;
   await refreshBaseline();
 }
@@ -466,6 +568,10 @@ async function submitLabelIfNeeded(attemptId) {
 
 function buildSummary(durationMs) {
   const ballsCompleted = state.balls.filter((b) => b.completed).length;
+  const emptyTaps = state.events.filter(
+    (evt) => evt.event_type === "touch_down" && evt.payload && evt.payload.hit === false
+  ).length;
+  const totalTaps = state.events.filter((evt) => evt.event_type === "touch_down").length;
   const perBall = {};
   for (const ball of state.balls) {
     const completion = state.completionLog.find((x) => x.ball_id === ball.id) || null;
@@ -482,6 +588,8 @@ function buildSummary(durationMs) {
     completion_ratio: ballsCompleted / 4,
     total_events: state.events.length,
     duration_ms: durationMs,
+    total_taps: totalTaps,
+    empty_taps: emptyTaps,
     completion_order: state.completionLog,
     per_ball: perBall,
   };
@@ -523,7 +631,6 @@ async function finishGame(success) {
 
     await submitLabelIfNeeded(body.id);
     await refreshBaseline();
-    els.lastSubmission.textContent = JSON.stringify(body, null, 2);
     els.gameStatus.textContent = baselineFlag
       ? `Baseline run submitted (${durationMs}ms).`
       : `Normal run + labels submitted (${durationMs}ms).`;
@@ -545,19 +652,62 @@ function bindEvents() {
   els.canvas.addEventListener("pointermove", pointerMove);
   els.canvas.addEventListener("pointerup", pointerUp);
   els.canvas.addEventListener("pointercancel", pointerUp);
+  els.clearDbBtn.addEventListener("click", clearDatabase);
+  els.downloadUsers.addEventListener("click", () => downloadCsv("users"));
+  els.downloadAttempts.addEventListener("click", () => downloadCsv("attempts"));
+  els.downloadRaw.addEventListener("click", () => downloadCsv("raw_events"));
+  els.downloadLabels.addEventListener("click", () => downloadCsv("labels"));
+  els.downloadSessions.addEventListener("click", () => downloadCsv("sessions"));
+}
+
+async function clearDatabase() {
+  const token = els.adminToken.value.trim();
+  if (!token) {
+    els.adminStatus.textContent = "Enter admin token first.";
+    return;
+  }
+  if (!confirm("This will delete all data. Are you sure?")) return;
+
+  try {
+    const res = await fetch(`${state.backendUrl}/admin/clear?token=${encodeURIComponent(token)}`, {
+      method: "POST",
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || "Clear failed");
+    els.adminStatus.textContent = "Database cleared.";
+    state.baselineCompleted = 0;
+    updateBaselineProgress();
+    updateStartButtonLabel();
+  } catch (err) {
+    els.adminStatus.textContent = `Clear error: ${err.message}`;
+  }
+}
+
+function downloadCsv(table) {
+  const token = els.adminToken.value.trim();
+  if (!token) {
+    els.adminStatus.textContent = "Enter admin token first.";
+    return;
+  }
+  const url = `${state.backendUrl}/admin/export/${table}?token=${encodeURIComponent(token)}`;
+  window.open(url, "_blank");
 }
 
 function init() {
   loadSession();
-  els.backendUrl.value = state.backendUrl;
   els.firstName.value = localStorage.getItem("firstName") || "";
   els.lastName.value = localStorage.getItem("lastName") || "";
+  updateLoggedInUser();
   persistSession();
   bindEvents();
   window.addEventListener("resize", resizeCanvas);
   resizeCanvas();
   setupBaskets();
   draw();
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("admin") === "1") {
+    els.adminCard.classList.remove("hidden");
+  }
   if (state.userId) {
     refreshBaseline().catch((err) => {
       els.baselineStatus.textContent = `Error: ${err.message}`;
@@ -566,6 +716,9 @@ function init() {
   } else {
     updateLabelVisibility();
     els.baselineBanner.textContent = "Complete 3 baseline runs first.";
+    els.nextStep.textContent = "Next: Save profile, then complete 3 baseline runs.";
+    updateBaselineProgress();
+    updateStartButtonLabel();
   }
 }
 
