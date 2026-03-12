@@ -18,7 +18,6 @@ const els = {
   baselineProgressFill: document.getElementById("baselineProgressFill"),
   baselineProgressText: document.getElementById("baselineProgressText"),
   baselineStatus: document.getElementById("baselineStatus"),
-  refreshBaselineBtn: document.getElementById("refreshBaselineBtn"),
   nextStep: document.getElementById("nextStep"),
   labelFields: document.getElementById("labelFields"),
   alcoholStatus: document.getElementById("alcoholStatus"),
@@ -496,6 +495,7 @@ async function saveProfile() {
     els.profileStatus.textContent = "Enter first and last name.";
     return;
   }
+  els.profileStatus.textContent = "Saving profile...";
   const res = await fetch(`${state.backendUrl}/users/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -506,7 +506,9 @@ async function saveProfile() {
     }),
   });
   const body = await res.json();
-  if (!res.ok) throw new Error(body.detail || "Profile save failed");
+  if (!res.ok) {
+    throw new Error(body.detail || "Profile save failed");
+  }
 
   state.userId = body.id;
   state.sessionId = "";
@@ -516,7 +518,11 @@ async function saveProfile() {
   persistSession();
   updateLoggedInUser();
   els.profileStatus.textContent = `Profile saved for ${body.first_name} ${body.last_name}`;
-  await refreshBaseline();
+  try {
+    await refreshBaseline();
+  } catch (err) {
+    els.profileStatus.textContent = `Profile saved. Baseline status error: ${err.message}`;
+  }
 }
 
 function runGame() {
@@ -644,9 +650,6 @@ function bindEvents() {
     saveProfile().catch((err) => (els.profileStatus.textContent = `Error: ${err.message}`));
   });
   els.switchUserBtn.addEventListener("click", clearSessionForNewUser);
-  els.refreshBaselineBtn.addEventListener("click", () => {
-    refreshBaseline().catch((err) => (els.baselineStatus.textContent = `Error: ${err.message}`));
-  });
   els.startBtn.addEventListener("click", startGame);
   els.canvas.addEventListener("pointerdown", pointerDown);
   els.canvas.addEventListener("pointermove", pointerMove);
@@ -690,7 +693,29 @@ function downloadCsv(table) {
     return;
   }
   const url = `${state.backendUrl}/admin/export/${table}?token=${encodeURIComponent(token)}`;
-  window.open(url, "_blank");
+  fetch(url)
+    .then((res) => {
+      if (!res.ok) {
+        return res.json().then((body) => {
+          throw new Error(body.detail || "Download failed");
+        });
+      }
+      return res.blob();
+    })
+    .then((blob) => {
+      const link = document.createElement("a");
+      const objectUrl = URL.createObjectURL(blob);
+      link.href = objectUrl;
+      link.download = `${table}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+      els.adminStatus.textContent = `Downloaded ${table}.csv`;
+    })
+    .catch((err) => {
+      els.adminStatus.textContent = `Download error: ${err.message}`;
+    });
 }
 
 function init() {
