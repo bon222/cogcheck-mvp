@@ -79,9 +79,18 @@ def admin_clear(token: str | None = None, db: Session = Depends(get_db)) -> dict
 @app.post("/admin/reset")
 def admin_reset(token: str | None = None) -> dict[str, str]:
     require_admin_token(token)
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-    return {"status": "reset"}
+    try:
+        if engine.dialect.name == "postgresql":
+            with engine.begin() as conn:
+                conn.exec_driver_sql("DROP SCHEMA public CASCADE;")
+                conn.exec_driver_sql("CREATE SCHEMA public;")
+            Base.metadata.create_all(bind=engine)
+        else:
+            Base.metadata.drop_all(bind=engine)
+            Base.metadata.create_all(bind=engine)
+        return {"status": "reset"}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Reset failed: {exc}") from exc
 
 
 @app.get("/admin/export/{table_name}")
