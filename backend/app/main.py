@@ -6,7 +6,6 @@ import os
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from . import crud, models, schemas
@@ -27,8 +26,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-if WEB_DIR.exists():
-    app.mount("/mvp", StaticFiles(directory=WEB_DIR), name="mvp")
 
 
 @app.on_event("startup")
@@ -44,6 +41,16 @@ def health() -> dict[str, str]:
 @app.get("/")
 def web_home() -> FileResponse:
     return FileResponse(WEB_DIR / "index.html")
+
+
+@app.get("/app.js")
+def web_app_js() -> FileResponse:
+    return FileResponse(WEB_DIR / "app.js")
+
+
+@app.get("/styles.css")
+def web_styles() -> FileResponse:
+    return FileResponse(WEB_DIR / "styles.css")
 
 
 def require_admin_token(token: str | None) -> None:
