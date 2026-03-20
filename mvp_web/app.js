@@ -1,6 +1,5 @@
 const BASELINE_REQUIRED = 3;
 const GAME_MS = 30000;
-const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 const DEFAULT_BACKEND_URL =
   window.location.protocol.startsWith("http") && window.location.host
     ? window.location.origin
@@ -23,6 +22,11 @@ const els = {
   sleepHours: document.getElementById("sleepHours"),
   startBtn: document.getElementById("startBtn"),
   gameStatus: document.getElementById("gameStatus"),
+  scoreCard: document.getElementById("scoreCard"),
+  scoreValue: document.getElementById("scoreValue"),
+  scoreContext: document.getElementById("scoreContext"),
+  personalBest: document.getElementById("personalBest"),
+  leaderboardList: document.getElementById("leaderboardList"),
   adminToken: document.getElementById("adminToken"),
   clearDbBtn: document.getElementById("clearDbBtn"),
   resetDbBtn: document.getElementById("resetDbBtn"),
@@ -39,8 +43,6 @@ const ctx = els.canvas.getContext("2d");
 let state = {
   backendUrl: localStorage.getItem("backendUrl") || DEFAULT_BACKEND_URL,
   userId: "",
-  sessionId: "",
-  sessionExpiresAt: 0,
   baselineCompleted: 0,
   running: false,
   startTs: 0,
@@ -75,25 +77,14 @@ function resizeCanvas() {
 function persistSession() {
   localStorage.setItem("backendUrl", state.backendUrl);
   localStorage.setItem("userId", state.userId);
-  localStorage.setItem("sessionId", state.sessionId);
-  localStorage.setItem("sessionExpiresAt", String(state.sessionExpiresAt));
 }
 
 function loadSession() {
   state.userId = localStorage.getItem("userId") || "";
-  state.sessionId = localStorage.getItem("sessionId") || "";
-  state.sessionExpiresAt = Number(localStorage.getItem("sessionExpiresAt") || "0");
-  if (Date.now() > state.sessionExpiresAt) {
-    state.userId = "";
-    state.sessionId = "";
-    state.sessionExpiresAt = 0;
-  }
 }
 
 function clearSessionForNewUser() {
   state.userId = "";
-  state.sessionId = "";
-  state.sessionExpiresAt = 0;
   localStorage.removeItem("firstName");
   localStorage.removeItem("lastName");
   persistSession();
@@ -108,8 +99,11 @@ function clearSessionForNewUser() {
   updateLabelVisibility();
 }
 
-function nowIso(ms) {
-  return new Date(ms).toISOString();
+function resetScoreCard() {
+  els.scoreCard.classList.add("hidden");
+  els.scoreValue.textContent = "0 ms";
+  els.scoreContext.textContent = "";
+  els.personalBest.textContent = "";
 }
 
 function appendEvent(eventType, x = null, y = null, payload = null) {
@@ -144,6 +138,58 @@ function updateBaselineProgress() {
 
 function updateStartButtonLabel() {
   els.startBtn.textContent = state.baselineCompleted < BASELINE_REQUIRED ? "Start Baseline Run" : "Start Normal Run";
+}
+
+function renderLeaderboard(entries) {
+  if (!entries.length) {
+    els.leaderboardList.innerHTML = '<div class="leaderboard-row"><span class="leaderboard-rank">-</span><span class="leaderboard-name">No scores yet</span><span class="leaderboard-score">-</span></div>';
+    return;
+  }
+
+  els.leaderboardList.innerHTML = entries
+    .map(
+      (entry) => `
+        <div class="leaderboard-row">
+          <span class="leaderboard-rank">#${entry.rank}</span>
+          <span class="leaderboard-name">${entry.first_name} ${entry.last_name}</span>
+          <span class="leaderboard-score">${entry.best_duration_ms} ms</span>
+        </div>
+      `
+    )
+    .join("");
+}
+
+async function refreshLeaderboard() {
+  try {
+    const res = await fetch(`${state.backendUrl}/leaderboard?limit=5`);
+    const rawText = await res.text();
+    const body = rawText ? JSON.parse(rawText) : [];
+    if (!res.ok) throw new Error("Leaderboard fetch failed");
+    renderLeaderboard(body);
+  } catch {
+    renderLeaderboard([]);
+  }
+}
+
+async function refreshUserStats() {
+  if (!state.userId) {
+    els.personalBest.textContent = "";
+    return;
+  }
+
+  try {
+    const res = await fetch(`${state.backendUrl}/users/${state.userId}/stats`);
+    const rawText = await res.text();
+    const body = rawText ? JSON.parse(rawText) : {};
+    if (!res.ok) throw new Error(body.detail || "Stats fetch failed");
+    if (body.best_duration_ms == null) {
+      els.personalBest.textContent = "No personal best yet.";
+      return;
+    }
+    els.personalBest.textContent = `Your best score: ${body.best_duration_ms} ms`;
+  } catch {
+    els.personalBest.textContent = "";
+  }
 }
 
 function setupBaskets() {
@@ -442,19 +488,6 @@ function pointerUp(evt) {
   }
 }
 
-async function createSession() {
-  const res = await fetch(`${state.backendUrl}/sessions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user_id: state.userId, baseline_mode: state.baselineCompleted < BASELINE_REQUIRED }),
-  });
-  const body = await res.json();
-  if (!res.ok) throw new Error(body.detail || "Session create failed");
-  state.sessionId = body.id;
-  state.sessionExpiresAt = Date.now() + SESSION_TTL_MS;
-  persistSession();
-}
-
 async function refreshBaseline() {
   if (!state.userId) {
     els.baselineStatus.textContent = "Save profile first.";
@@ -517,8 +550,6 @@ async function saveProfile() {
   }
 
   state.userId = body.id;
-  state.sessionId = "";
-  state.sessionExpiresAt = 0;
   localStorage.setItem("firstName", firstName);
   localStorage.setItem("lastName", lastName);
   persistSession();
@@ -526,6 +557,8 @@ async function saveProfile() {
   els.profileStatus.textContent = `Profile saved for ${body.first_name} ${body.last_name}`;
   try {
     await refreshBaseline();
+    await refreshUserStats();
+    await refreshLeaderboard();
   } catch (err) {
     els.profileStatus.textContent = `Profile saved. Baseline status error: ${err.message}`;
   }
@@ -533,6 +566,7 @@ async function saveProfile() {
 
 function runGame() {
   resetGameState();
+  resetScoreCard();
   state.running = true;
   state.startTs = performance.now();
   els.gameStatus.textContent = "Game running (4 random moving balls, max 30s)...";
@@ -601,20 +635,20 @@ async function finishGame(success) {
 
   const durationMs = Math.max(1, Math.floor(state.endTs - state.startTs));
   const baselineFlag = state.baselineCompleted < BASELINE_REQUIRED;
-  const labelPayload = await submitLabelIfNeeded();
-
-  const payload = {
-    user_id: state.userId,
-    baseline_flag: baselineFlag,
-    duration_ms: durationMs,
-    success,
-    summary: buildSummary(durationMs),
-    raw_events: state.events,
-    alcohol_status: labelPayload?.alcohol_status ?? null,
-    sleep_hours: labelPayload?.sleep_hours ?? null,
-  };
 
   try {
+    const labelPayload = await submitLabelIfNeeded();
+    const payload = {
+      user_id: state.userId,
+      baseline_flag: baselineFlag,
+      duration_ms: durationMs,
+      success,
+      summary: buildSummary(durationMs),
+      raw_events: state.events,
+      alcohol_status: labelPayload?.alcohol_status ?? null,
+      sleep_hours: labelPayload?.sleep_hours ?? null,
+    };
+
     const res = await fetch(`${state.backendUrl}/attempts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -624,9 +658,16 @@ async function finishGame(success) {
     if (!res.ok) throw new Error(body.detail || "Attempt submit failed");
 
     await refreshBaseline();
+    await refreshUserStats();
+    await refreshLeaderboard();
+    els.scoreCard.classList.remove("hidden");
+    els.scoreValue.textContent = `${durationMs} ms`;
+    els.scoreContext.textContent = success
+      ? `Completed successfully in ${durationMs} ms.`
+      : `Round ended before all corners were filled. Time recorded: ${durationMs} ms.`;
     els.gameStatus.textContent = baselineFlag
       ? `Baseline run submitted (${durationMs}ms).`
-      : `Normal run + labels submitted (${durationMs}ms).`;
+      : `Normal run submitted (${durationMs}ms).`;
   } catch (err) {
     els.gameStatus.textContent = `Submit error: ${err.message}`;
   }
@@ -673,6 +714,8 @@ async function resetDatabase() {
     state.baselineCompleted = 0;
     updateBaselineProgress();
     updateStartButtonLabel();
+    resetScoreCard();
+    renderLeaderboard([]);
   } catch (err) {
     els.adminStatus.textContent = `Reset error (v3): ${err.message}`;
   }
@@ -702,6 +745,8 @@ async function clearDatabase() {
     state.baselineCompleted = 0;
     updateBaselineProgress();
     updateStartButtonLabel();
+    resetScoreCard();
+    renderLeaderboard([]);
   } catch (err) {
     els.adminStatus.textContent = `Clear error (v3): ${err.message}`;
   }
@@ -763,6 +808,7 @@ function init() {
     refreshBaseline().catch((err) => {
       els.baselineStatus.textContent = `Error: ${err.message}`;
     });
+    refreshUserStats();
     els.profileStatus.textContent = "Session resumed for this device.";
   } else {
     updateLabelVisibility();
@@ -771,6 +817,7 @@ function init() {
     updateBaselineProgress();
     updateStartButtonLabel();
   }
+  refreshLeaderboard();
 }
 
 init();

@@ -53,6 +53,19 @@
       <canvas id="gameCanvas" width="360" height="640"></canvas>
     </section>
 
+    <section class="card hidden" id="scoreCard">
+      <h2>Your Score</h2>
+      <p id="scoreValue" class="score-value">0 ms</p>
+      <p id="scoreContext" class="score-context"></p>
+      <p id="personalBest" class="personal-best"></p>
+    </section>
+
+    <section class="card" id="leaderboardCard">
+      <h2>Top 5 Leaderboard</h2>
+      <p class="leaderboard-note">Fastest successful completion times.</p>
+      <div id="leaderboardList" class="leaderboard-list"></div>
+    </section>
+
     <section class="card hidden" id="adminCard">
       <h2>Admin</h2>
       <p class="admin-note">Only for you. This clears data and downloads CSV.</p>

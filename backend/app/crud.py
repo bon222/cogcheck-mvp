@@ -96,3 +96,60 @@ def create_attempt(db: Session, payload: schemas.AttemptCreate) -> models.Attemp
     db.commit()
     db.refresh(attempt)
     return attempt
+
+
+def get_user_stats(db: Session, user_id: str) -> schemas.UserStatsOut | None:
+    user = get_user(db, user_id)
+    if user is None:
+        return None
+
+    total_attempts = int(
+        db.scalar(select(func.count(models.Attempt.id)).where(models.Attempt.user_id == user_id)) or 0
+    )
+    successful_attempts = int(
+        db.scalar(
+            select(func.count(models.Attempt.id))
+            .where(models.Attempt.user_id == user_id)
+            .where(models.Attempt.success.is_(True))
+        )
+        or 0
+    )
+    best_duration_ms = db.scalar(
+        select(func.min(models.Attempt.duration_ms))
+        .where(models.Attempt.user_id == user_id)
+        .where(models.Attempt.success.is_(True))
+    )
+
+    return schemas.UserStatsOut(
+        user_id=user.id,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        best_duration_ms=best_duration_ms,
+        total_attempts=total_attempts,
+        successful_attempts=successful_attempts,
+    )
+
+
+def get_leaderboard(db: Session, limit: int = 5) -> list[schemas.LeaderboardEntryOut]:
+    stmt = (
+        select(
+            models.User.first_name,
+            models.User.last_name,
+            func.min(models.Attempt.duration_ms).label("best_duration_ms"),
+        )
+        .join(models.Attempt, models.Attempt.user_id == models.User.id)
+        .where(models.Attempt.success.is_(True))
+        .group_by(models.User.id, models.User.first_name, models.User.last_name)
+        .order_by(func.min(models.Attempt.duration_ms).asc(), models.User.last_name.asc(), models.User.first_name.asc())
+        .limit(limit)
+    )
+    rows = db.execute(stmt).all()
+    return [
+        schemas.LeaderboardEntryOut(
+            rank=index + 1,
+            first_name=row.first_name,
+            last_name=row.last_name,
+            best_duration_ms=row.best_duration_ms,
+        )
+        for index, row in enumerate(rows)
+    ]

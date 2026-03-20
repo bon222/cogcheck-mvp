@@ -62,3 +62,19 @@ class BaselineStatusOut(BaseModel):
     required_attempts: int = 3
     baseline_attempts_completed: int
     baseline_complete: bool
+
+
+class UserStatsOut(BaseModel):
+    user_id: str
+    first_name: str
+    last_name: str
+    best_duration_ms: int | None
+    total_attempts: int
+    successful_attempts: int
+
+
+class LeaderboardEntryOut(BaseModel):
+    rank: int
+    first_name: str
+    last_name: str
+    best_duration_ms: int

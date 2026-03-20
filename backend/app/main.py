@@ -140,6 +140,20 @@ def get_baseline_status(user_id: str, db: Session = Depends(get_db)) -> schemas.
     )
 
 
+@app.get("/users/{user_id}/stats", response_model=schemas.UserStatsOut)
+def get_user_stats(user_id: str, db: Session = Depends(get_db)) -> schemas.UserStatsOut:
+    stats = crud.get_user_stats(db, user_id)
+    if stats is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    return stats
+
+
+@app.get("/leaderboard", response_model=list[schemas.LeaderboardEntryOut])
+def get_leaderboard(limit: int = 5, db: Session = Depends(get_db)) -> list[schemas.LeaderboardEntryOut]:
+    safe_limit = max(1, min(limit, 25))
+    return crud.get_leaderboard(db, limit=safe_limit)
+
+
 @app.post("/attempts", response_model=schemas.AttemptOut)
 def submit_attempt(payload: schemas.AttemptCreate, db: Session = Depends(get_db)) -> schemas.AttemptOut:
     user = crud.get_user(db, payload.user_id)

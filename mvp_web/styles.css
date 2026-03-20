@@ -162,3 +162,54 @@ button.danger {
 .next-step {
   font-weight: 600;
 }
+
+.score-value {
+  margin: 0;
+  font-size: clamp(38px, 10vw, 64px);
+  font-weight: 800;
+  line-height: 1;
+  color: #0f172a;
+}
+
+.score-context,
+.personal-best,
+.leaderboard-note {
+  color: #475569;
+  font-size: 14px;
+}
+
+.personal-best {
+  font-weight: 700;
+  color: #0f766e;
+}
+
+.leaderboard-list {
+  display: grid;
+  gap: 8px;
+}
+
+.leaderboard-row {
+  display: grid;
+  grid-template-columns: 42px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #dbe3ef;
+}
+
+.leaderboard-rank {
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.leaderboard-name {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.leaderboard-score {
+  font-weight: 800;
+  color: #0f766e;
+}
