@@ -52,6 +52,8 @@ const els = {
   leaderboardBackBtn: document.getElementById("leaderboardBackBtn"),
   adminCard: document.getElementById("adminCard"),
   adminToken: document.getElementById("adminToken"),
+  scoreModeSelect: document.getElementById("scoreModeSelect"),
+  saveScoreModeBtn: document.getElementById("saveScoreModeBtn"),
   clearDbBtn: document.getElementById("clearDbBtn"),
   resetDbBtn: document.getElementById("resetDbBtn"),
   downloadUsers: document.getElementById("downloadUsers"),
@@ -97,6 +99,10 @@ const state = {
   lastTapAt: 0,
   savingResult: false,
   latestScoreMs: null,
+  latestDurationMs: null,
+  latestSummary: null,
+  latestResultSuccess: null,
+  scoreMode: "active_ball_time_ms",
 };
 
 function setScreen(name) {
@@ -228,6 +234,16 @@ function setResultActionsDisabled(disabled) {
   els.resultSwitchUserBtn.disabled = disabled;
 }
 
+function getScoreLabel() {
+  return state.scoreMode === "duration_ms" ? "completion time" : "active ball time";
+}
+
+function getDisplayScoreMs(summary, durationMs) {
+  if (state.scoreMode === "duration_ms") return durationMs;
+  if (summary && typeof summary.active_ball_time_ms === "number") return summary.active_ball_time_ms;
+  return durationMs;
+}
+
 function renderLeaderboard(entries) {
   if (!entries.length) {
     els.leaderboardList.innerHTML = '<div class="leaderboard-row"><span class="leaderboard-rank">-</span><span class="leaderboard-name">No scores yet</span><span class="leaderboard-score">-</span></div>';
@@ -269,9 +285,23 @@ async function refreshUserStats() {
     const body = text ? JSON.parse(text) : {};
     if (!res.ok) throw new Error(body.detail || "Stats fetch failed");
     els.personalBest.textContent =
-      body.best_score_ms == null ? "No personal best yet." : `Your best score: ${body.best_score_ms} ms`;
+      body.best_score_ms == null ? "No personal best yet." : `Your best ${getScoreLabel()}: ${body.best_score_ms} ms`;
   } catch {
     els.personalBest.textContent = "";
+  }
+}
+
+async function refreshScoreMode() {
+  try {
+    const res = await fetch(`${state.backendUrl}/score-mode`);
+    const text = await res.text();
+    const body = text ? JSON.parse(text) : {};
+    if (!res.ok) throw new Error(body.detail || "Score mode fetch failed");
+    state.scoreMode = body.score_mode || "active_ball_time_ms";
+    if (els.scoreModeSelect) els.scoreModeSelect.value = state.scoreMode;
+  } catch {
+    state.scoreMode = "active_ball_time_ms";
+    if (els.scoreModeSelect) els.scoreModeSelect.value = state.scoreMode;
   }
 }
 
@@ -699,12 +729,18 @@ function showResult(durationMs, success, saving = true) {
   els.scoreValue.textContent = `${scoreMs} ms`;
   els.scoreContext.textContent = saving
     ? success
-      ? "Round complete. Saving score..."
-      : "Time ran out. Saving recorded score..."
+      ? `Round complete. Saving ${getScoreLabel()}...`
+      : `Time ran out. Saving recorded ${getScoreLabel()}...`
     : success
-      ? `Score saved. Lower is better.`
-      : `Score recorded from unresolved ball time. Lower is better.`;
+      ? `${getScoreLabel()} saved. Lower is better.`
+      : `${getScoreLabel()} recorded. Lower is better.`;
   setScreen("result");
+}
+
+function refreshVisibleResultScore() {
+  if (state.currentScreen !== "result" || !state.latestSummary || state.latestDurationMs == null) return;
+  state.latestScoreMs = getDisplayScoreMs(state.latestSummary, state.latestDurationMs);
+  showResult(state.latestDurationMs, Boolean(state.latestResultSuccess), state.savingResult);
 }
 
 async function finishGame(success) {
@@ -721,7 +757,10 @@ async function finishGame(success) {
   const durationMs = Math.max(1, Math.floor(state.endTs - state.startTs));
   const baselineFlag = state.pendingRunType === "baseline";
   const summary = buildSummary(durationMs);
-  state.latestScoreMs = summary.active_ball_time_ms;
+  state.latestDurationMs = durationMs;
+  state.latestSummary = summary;
+  state.latestResultSuccess = success;
+  state.latestScoreMs = getDisplayScoreMs(summary, durationMs);
   draw();
   showResult(durationMs, success, true);
 
@@ -834,6 +873,9 @@ function clearSessionForNewUser() {
   els.scoreValue.textContent = "0 ms";
   els.scoreContext.textContent = "";
   state.latestScoreMs = null;
+  state.latestDurationMs = null;
+  state.latestSummary = null;
+  state.latestResultSuccess = null;
   els.gameStartOverlay.classList.add("hidden");
   setResultActionsDisabled(false);
   updateLoggedInUser();
@@ -996,6 +1038,36 @@ function downloadCsv(table) {
     });
 }
 
+async function saveScoreMode() {
+  const token = els.adminToken.value.trim();
+  if (!token) {
+    els.adminStatus.textContent = "Enter admin token first.";
+    return;
+  }
+  try {
+    const mode = els.scoreModeSelect.value;
+    const res = await fetch(`${state.backendUrl}/admin/score-mode?token=${encodeURIComponent(token)}&score_mode=${encodeURIComponent(mode)}`, {
+      method: "POST",
+    });
+    const text = await res.text();
+    let body = {};
+    try {
+      body = text ? JSON.parse(text) : {};
+    } catch {
+      body = { detail: text || "Save score mode failed" };
+    }
+    if (!res.ok) throw new Error(body.detail || "Save score mode failed");
+    state.scoreMode = body.score_mode;
+    els.scoreModeSelect.value = state.scoreMode;
+    els.adminStatus.textContent = `Score mode saved: ${state.scoreMode}`;
+    refreshVisibleResultScore();
+    await refreshUserStats();
+    await refreshLeaderboard();
+  } catch (err) {
+    els.adminStatus.textContent = `Score mode error: ${err.message}`;
+  }
+}
+
 function bindEvents() {
   els.saveProfileBtn.addEventListener("click", () => {
     saveProfile().catch((err) => {
@@ -1027,6 +1099,7 @@ function bindEvents() {
 
   els.clearDbBtn.addEventListener("click", clearDatabase);
   els.resetDbBtn.addEventListener("click", resetDatabase);
+  els.saveScoreModeBtn.addEventListener("click", saveScoreMode);
   els.downloadUsers.addEventListener("click", () => downloadCsv("users"));
   els.downloadAttempts.addEventListener("click", () => downloadCsv("attempts"));
   els.downloadRaw.addEventListener("click", () => downloadCsv("raw_events"));
@@ -1047,6 +1120,7 @@ async function init() {
   els.firstName.value = localStorage.getItem("firstName") || "";
   els.lastName.value = localStorage.getItem("lastName") || "";
   updateLoggedInUser();
+  await refreshScoreMode();
 
   if (!state.userId) {
     setScreen("login");

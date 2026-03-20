@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CogCheck MVP - Game 1</title>
-  <link rel="stylesheet" href="/styles.css?v=15" />
+  <link rel="stylesheet" href="/styles.css?v=17" />
 </head>
 <body>
   <main class="app-shell">
@@ -122,6 +122,15 @@
       <h2>Admin</h2>
       <p class="screen-copy">Only for you. This clears data and downloads CSV files.</p>
       <label>Admin Token <input id="adminToken" type="password" /></label>
+      <label>Score Mode
+        <select id="scoreModeSelect">
+          <option value="active_ball_time_ms">Active ball time</option>
+          <option value="duration_ms">Completion time</option>
+        </select>
+      </label>
+      <div class="button-row">
+        <button id="saveScoreModeBtn">Save Score Mode</button>
+      </div>
       <div class="button-grid">
         <button id="clearDbBtn" class="danger">Clear Database</button>
         <button id="resetDbBtn" class="danger">Reset Schema</button>
@@ -144,6 +153,6 @@
     </div>
   </div>
 
-  <script src="/app.js?v=15"></script>
+  <script src="/app.js?v=17"></script>
 </body>
 </html>

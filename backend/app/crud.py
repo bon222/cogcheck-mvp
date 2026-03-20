@@ -4,9 +4,30 @@ from sqlalchemy.orm import Session
 from . import models, schemas
 
 BASELINE_REQUIRED_ATTEMPTS = 3
+DEFAULT_SCORE_MODE = "active_ball_time_ms"
 
 
-def _attempt_score_ms(attempt: models.Attempt) -> int | None:
+def get_score_mode(db: Session) -> str:
+    setting = db.get(models.AppSetting, "score_mode")
+    if setting is None:
+        return DEFAULT_SCORE_MODE
+    return setting.value
+
+
+def set_score_mode(db: Session, score_mode: str) -> str:
+    setting = db.get(models.AppSetting, "score_mode")
+    if setting is None:
+        setting = models.AppSetting(key="score_mode", value=score_mode)
+        db.add(setting)
+    else:
+        setting.value = score_mode
+    db.commit()
+    return score_mode
+
+
+def _attempt_score_ms(attempt: models.Attempt, score_mode: str) -> int | None:
+    if score_mode == "duration_ms":
+        return attempt.duration_ms
     if isinstance(attempt.summary, dict):
         score = attempt.summary.get("active_ball_time_ms")
         if isinstance(score, int):
@@ -122,12 +143,13 @@ def get_user_stats(db: Session, user_id: str) -> schemas.UserStatsOut | None:
         )
         or 0
     )
+    score_mode = get_score_mode(db)
     successful_attempts_rows = db.scalars(
         select(models.Attempt)
         .where(models.Attempt.user_id == user_id)
         .where(models.Attempt.success.is_(True))
     ).all()
-    scores = [score for attempt in successful_attempts_rows if (score := _attempt_score_ms(attempt)) is not None]
+    scores = [score for attempt in successful_attempts_rows if (score := _attempt_score_ms(attempt, score_mode)) is not None]
     best_score_ms = min(scores) if scores else None
 
     return schemas.UserStatsOut(
@@ -141,6 +163,7 @@ def get_user_stats(db: Session, user_id: str) -> schemas.UserStatsOut | None:
 
 
 def get_leaderboard(db: Session, limit: int = 5) -> list[schemas.LeaderboardEntryOut]:
+    score_mode = get_score_mode(db)
     users = db.scalars(select(models.User)).all()
     rows: list[tuple[str, str, int]] = []
     for user in users:
@@ -149,7 +172,7 @@ def get_leaderboard(db: Session, limit: int = 5) -> list[schemas.LeaderboardEntr
             .where(models.Attempt.user_id == user.id)
             .where(models.Attempt.success.is_(True))
         ).all()
-        scores = [score for attempt in attempts if (score := _attempt_score_ms(attempt)) is not None]
+        scores = [score for attempt in attempts if (score := _attempt_score_ms(attempt, score_mode)) is not None]
         if scores:
             rows.append((user.first_name, user.last_name, min(scores)))
 

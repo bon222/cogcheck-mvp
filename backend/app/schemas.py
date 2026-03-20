@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 
 AlcoholStatus = Literal["no", "a_couple", "yes"]
+ScoreMode = Literal["active_ball_time_ms", "duration_ms"]
 
 
 class UserCreate(BaseModel):
@@ -78,3 +79,7 @@ class LeaderboardEntryOut(BaseModel):
     first_name: str
     last_name: str
     best_score_ms: int
+
+
+class ScoreModeOut(BaseModel):
+    score_mode: ScoreMode

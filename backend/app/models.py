@@ -54,3 +54,10 @@ class RawEvent(Base):
     payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     attempt: Mapped[Attempt] = relationship(back_populates="raw_events")
+
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str] = mapped_column(String(100))

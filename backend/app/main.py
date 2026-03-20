@@ -38,6 +38,11 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/score-mode", response_model=schemas.ScoreModeOut)
+def get_score_mode(db: Session = Depends(get_db)) -> schemas.ScoreModeOut:
+    return schemas.ScoreModeOut(score_mode=crud.get_score_mode(db))
+
+
 @app.get("/")
 def web_home() -> FileResponse:
     response = FileResponse(WEB_DIR / "index.html")
@@ -119,6 +124,13 @@ def admin_export(table_name: str, token: str | None = None, db: Session = Depend
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={table_name}.csv"},
     )
+
+
+@app.post("/admin/score-mode", response_model=schemas.ScoreModeOut)
+def admin_set_score_mode(score_mode: schemas.ScoreMode, token: str | None = None, db: Session = Depends(get_db)) -> schemas.ScoreModeOut:
+    require_admin_token(token)
+    saved = crud.set_score_mode(db, score_mode)
+    return schemas.ScoreModeOut(score_mode=saved)
 
 
 @app.post("/users/register", response_model=schemas.UserOut)
