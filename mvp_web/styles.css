@@ -34,6 +34,19 @@ h1 {
   box-shadow: 0 4px 20px rgba(15, 23, 42, 0.05);
 }
 
+.game-card-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.game-note {
+  margin: 4px 0 0;
+  color: #475569;
+  font-size: 14px;
+}
+
 label {
   display: block;
   margin: 8px 0;
@@ -96,6 +109,53 @@ button.danger {
   display: none;
 }
 
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  z-index: 20;
+}
+
+.modal {
+  width: min(460px, 100%);
+  background: #fffdf8;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.2);
+  padding: 18px;
+}
+
+.modal-step {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #0f766e;
+}
+
+.modal-description {
+  color: #475569;
+  font-size: 14px;
+}
+
+.modal-section {
+  margin-top: 14px;
+}
+
+.modal-actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.score-actions {
+  margin-top: 14px;
+}
+
 #gameCanvas {
   margin-top: 8px;
   width: 100%;
@@ -135,6 +195,12 @@ button.danger {
   border-radius: 8px;
   padding: 8px 10px;
   margin: 8px 0 10px;
+  font-size: 14px;
+}
+
+.profile-note {
+  margin: 8px 0 10px;
+  color: #475569;
   font-size: 14px;
 }
 

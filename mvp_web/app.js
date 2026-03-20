@@ -6,8 +6,6 @@ const DEFAULT_BACKEND_URL =
     : "http://127.0.0.1:8000";
 
 const els = {
-  firstName: document.getElementById("firstName"),
-  lastName: document.getElementById("lastName"),
   saveProfileBtn: document.getElementById("saveProfileBtn"),
   switchUserBtn: document.getElementById("switchUserBtn"),
   loggedInUser: document.getElementById("loggedInUser"),
@@ -17,9 +15,6 @@ const els = {
   baselineProgressText: document.getElementById("baselineProgressText"),
   baselineStatus: document.getElementById("baselineStatus"),
   nextStep: document.getElementById("nextStep"),
-  labelFields: document.getElementById("labelFields"),
-  alcoholStatus: document.getElementById("alcoholStatus"),
-  sleepHours: document.getElementById("sleepHours"),
   startBtn: document.getElementById("startBtn"),
   gameStatus: document.getElementById("gameStatus"),
   scoreCard: document.getElementById("scoreCard"),
@@ -36,6 +31,21 @@ const els = {
   adminStatus: document.getElementById("adminStatus"),
   adminCard: document.getElementById("adminCard"),
   canvas: document.getElementById("gameCanvas"),
+  retryBtn: document.getElementById("retryBtn"),
+  flowOverlay: document.getElementById("flowOverlay"),
+  modalStep: document.getElementById("modalStep"),
+  modalTitle: document.getElementById("modalTitle"),
+  modalDescription: document.getElementById("modalDescription"),
+  modalProfile: document.getElementById("modalProfile"),
+  modalFirstName: document.getElementById("modalFirstName"),
+  modalLastName: document.getElementById("modalLastName"),
+  modalProfileStatus: document.getElementById("modalProfileStatus"),
+  modalBaseline: document.getElementById("modalBaseline"),
+  modalBaselineBanner: document.getElementById("modalBaselineBanner"),
+  modalLabels: document.getElementById("modalLabels"),
+  modalAlcoholStatus: document.getElementById("modalAlcoholStatus"),
+  modalSleepHours: document.getElementById("modalSleepHours"),
+  modalPrimaryBtn: document.getElementById("modalPrimaryBtn"),
 };
 
 const ctx = els.canvas.getContext("2d");
@@ -59,6 +69,9 @@ let state = {
   completionLog: [],
   ballFirstTouchMs: {},
   freePointerId: null,
+  modalStage: null,
+  alcoholStatus: "no",
+  sleepHours: 8,
 };
 
 function resizeCanvas() {
@@ -85,11 +98,13 @@ function loadSession() {
 
 function clearSessionForNewUser() {
   state.userId = "";
+  state.alcoholStatus = "no";
+  state.sleepHours = 8;
   localStorage.removeItem("firstName");
   localStorage.removeItem("lastName");
   persistSession();
-  els.firstName.value = "";
-  els.lastName.value = "";
+  els.modalFirstName.value = "";
+  els.modalLastName.value = "";
   els.profileStatus.textContent = "Switched user. Enter new name and save profile.";
   els.baselineStatus.textContent = "Not loaded yet.";
   els.baselineBanner.textContent = "Complete 3 baseline runs first.";
@@ -97,6 +112,7 @@ function clearSessionForNewUser() {
   updateLoggedInUser();
   updateBaselineProgress();
   updateLabelVisibility();
+  showModal("profile");
 }
 
 function resetScoreCard() {
@@ -104,6 +120,59 @@ function resetScoreCard() {
   els.scoreValue.textContent = "0 ms";
   els.scoreContext.textContent = "";
   els.personalBest.textContent = "";
+}
+
+function setModalSection(sectionEl) {
+  [els.modalProfile, els.modalBaseline, els.modalLabels].forEach((el) => el.classList.add("hidden"));
+  if (sectionEl) sectionEl.classList.remove("hidden");
+}
+
+function showModal(stage) {
+  state.modalStage = stage;
+  els.flowOverlay.classList.remove("hidden");
+
+  if (stage === "profile") {
+    els.modalStep.textContent = "Step 1";
+    els.modalTitle.textContent = "Sign in to continue";
+    els.modalDescription.textContent = "Enter your name so we can keep your baseline and best score.";
+    els.modalPrimaryBtn.textContent = "Save Profile";
+    els.modalFirstName.value = localStorage.getItem("firstName") || "";
+    els.modalLastName.value = localStorage.getItem("lastName") || "";
+    els.modalProfileStatus.textContent = "";
+    setModalSection(els.modalProfile);
+    return;
+  }
+
+  if (stage === "baseline") {
+    const left = Math.max(0, BASELINE_REQUIRED - state.baselineCompleted);
+    els.modalStep.textContent = "Step 2";
+    els.modalTitle.textContent = "Baseline required";
+    els.modalDescription.textContent = "Do this at your best cognitive level. We use these runs to compare future performance.";
+    els.modalBaselineBanner.textContent = `You need ${left} more baseline run${left === 1 ? "" : "s"} before normal play.`;
+    els.modalPrimaryBtn.textContent = "Start Baseline Run";
+    setModalSection(els.modalBaseline);
+    return;
+  }
+
+  if (stage === "labels") {
+    els.modalStep.textContent = "Step 2";
+    els.modalTitle.textContent = "Before you play";
+    els.modalDescription.textContent = "Log current drinking and sleep levels for this attempt.";
+    els.modalAlcoholStatus.value = state.alcoholStatus;
+    els.modalSleepHours.value = state.sleepHours;
+    els.modalPrimaryBtn.textContent = "Start Normal Run";
+    setModalSection(els.modalLabels);
+  }
+}
+
+function hideModal() {
+  state.modalStage = null;
+  els.flowOverlay.classList.add("hidden");
+}
+
+function startRunNow() {
+  hideModal();
+  runGame();
 }
 
 function appendEvent(eventType, x = null, y = null, payload = null) {
@@ -518,18 +587,20 @@ async function refreshBaseline() {
 }
 
 function updateLabelVisibility() {
-  const needsBaseline = state.baselineCompleted < BASELINE_REQUIRED;
-  els.labelFields.style.display = needsBaseline ? "none" : "block";
+  if (state.baselineCompleted >= BASELINE_REQUIRED) {
+    state.alcoholStatus = els.modalAlcoholStatus.value;
+    state.sleepHours = Number(els.modalSleepHours.value) || 8;
+  }
 }
 
 async function saveProfile() {
-  const firstName = els.firstName.value.trim();
-  const lastName = els.lastName.value.trim();
+  const firstName = els.modalFirstName.value.trim();
+  const lastName = els.modalLastName.value.trim();
   if (!firstName || !lastName) {
-    els.profileStatus.textContent = "Enter first and last name.";
+    els.modalProfileStatus.textContent = "Enter first and last name.";
     return;
   }
-  els.profileStatus.textContent = "Saving profile...";
+  els.modalProfileStatus.textContent = "Saving profile...";
   const res = await fetch(`${state.backendUrl}/users/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -559,6 +630,11 @@ async function saveProfile() {
     await refreshBaseline();
     await refreshUserStats();
     await refreshLeaderboard();
+    if (state.baselineCompleted < BASELINE_REQUIRED) {
+      showModal("baseline");
+    } else {
+      hideModal();
+    }
   } catch (err) {
     els.profileStatus.textContent = `Profile saved. Baseline status error: ${err.message}`;
   }
@@ -576,21 +652,25 @@ function runGame() {
 
 function startGame() {
   if (!state.userId) {
-    els.gameStatus.textContent = "Save profile first.";
+    showModal("profile");
     return;
   }
-  runGame();
+  if (state.baselineCompleted < BASELINE_REQUIRED) {
+    showModal("baseline");
+    return;
+  }
+  showModal("labels");
 }
 
 async function submitLabelIfNeeded() {
   if (state.baselineCompleted < BASELINE_REQUIRED) return;
-  const sleepValue = Number(els.sleepHours.value);
+  const sleepValue = Number(state.sleepHours);
   if (Number.isNaN(sleepValue) || sleepValue < 0 || sleepValue > 24) {
     throw new Error("Sleep hours must be between 0 and 24.");
   }
 
   return {
-    alcohol_status: els.alcoholStatus.value,
+    alcohol_status: state.alcoholStatus,
     sleep_hours: sleepValue,
   };
 }
@@ -674,11 +754,23 @@ async function finishGame(success) {
 }
 
 function bindEvents() {
-  els.saveProfileBtn.addEventListener("click", () => {
-    saveProfile().catch((err) => (els.profileStatus.textContent = `Error: ${err.message}`));
-  });
+  els.saveProfileBtn.addEventListener("click", () => showModal("profile"));
   els.switchUserBtn.addEventListener("click", clearSessionForNewUser);
   els.startBtn.addEventListener("click", startGame);
+  els.retryBtn.addEventListener("click", startGame);
+  els.modalPrimaryBtn.addEventListener("click", () => {
+    if (state.modalStage === "profile") {
+      saveProfile().catch((err) => {
+        els.modalProfileStatus.textContent = `Error: ${err.message}`;
+      });
+      return;
+    }
+    if (state.modalStage === "labels") {
+      state.alcoholStatus = els.modalAlcoholStatus.value;
+      state.sleepHours = Number(els.modalSleepHours.value) || 8;
+    }
+    startRunNow();
+  });
   els.canvas.addEventListener("pointerdown", pointerDown);
   els.canvas.addEventListener("pointermove", pointerMove);
   els.canvas.addEventListener("pointerup", pointerUp);
@@ -791,8 +883,8 @@ function downloadCsv(table) {
 
 function init() {
   loadSession();
-  els.firstName.value = localStorage.getItem("firstName") || "";
-  els.lastName.value = localStorage.getItem("lastName") || "";
+  els.modalFirstName.value = localStorage.getItem("firstName") || "";
+  els.modalLastName.value = localStorage.getItem("lastName") || "";
   updateLoggedInUser();
   persistSession();
   bindEvents();
@@ -816,6 +908,7 @@ function init() {
     els.nextStep.textContent = "Next: Save profile, then complete 3 baseline runs.";
     updateBaselineProgress();
     updateStartButtonLabel();
+    showModal("profile");
   }
   refreshLeaderboard();
 }

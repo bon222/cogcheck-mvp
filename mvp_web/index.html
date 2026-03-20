@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CogCheck MVP - Game 1</title>
-  <link rel="stylesheet" href="/styles.css?v=3" />
+  <link rel="stylesheet" href="/styles.css?v=4" />
 </head>
 <body>
   <main class="container">
@@ -12,17 +12,16 @@
     <p class="lead">Quick cognitive check: complete the corner-ball challenge.</p>
 
     <section class="card" id="profileCard">
-      <h2>1) Profile</h2>
+      <h2>Profile</h2>
       <p id="loggedInUser" class="logged-in">Not logged in.</p>
-      <label>First Name <input id="firstName" type="text" /></label>
-      <label>Last Name <input id="lastName" type="text" /></label>
-      <button id="saveProfileBtn">Save Profile</button>
+      <p class="profile-note">Your name, baseline progress, and best score stay linked together.</p>
+      <button id="saveProfileBtn">Sign In / Change Name</button>
       <button id="switchUserBtn" class="secondary">Switch User (new profile)</button>
       <p id="profileStatus" class="status"></p>
     </section>
 
-    <section class="card">
-      <h2>2) Baseline Status</h2>
+    <section class="card" id="statusCard">
+      <h2>Session Status</h2>
       <p id="baselineBanner" class="banner"></p>
       <div class="progress-wrap" aria-label="Baseline progress">
         <div id="baselineProgressFill" class="progress-fill"></div>
@@ -32,25 +31,22 @@
       <p id="nextStep" class="next-step"></p>
     </section>
 
-    <section class="card">
-      <h2>3) Game</h2>
-      <p>All 4 balls appear at random times and move randomly. Drag any ball to any open corner. Each corner can be used once.</p>
-      <div id="labelFields" class="labels">
-        <h3>Required before normal runs</h3>
-        <label>Drinking level
-          <select id="alcoholStatus">
-            <option value="no">No alcohol</option>
-            <option value="a_couple">A couple drinks</option>
-            <option value="yes">Yes (more than a couple)</option>
-          </select>
-        </label>
-        <label>Hours slept
-          <input id="sleepHours" type="number" min="0" max="24" step="0.5" value="8" />
-        </label>
+    <section class="card game-card">
+      <div class="game-card-top">
+        <div>
+          <h2>Game</h2>
+          <p class="game-note">All 4 balls appear at random times and move randomly. Drag any ball to any open corner.</p>
+        </div>
+        <button id="startBtn">Start Game</button>
       </div>
-      <button id="startBtn">Start Game</button>
       <p id="gameStatus" class="status"></p>
       <canvas id="gameCanvas" width="360" height="640"></canvas>
+    </section>
+
+    <section class="card" id="leaderboardCard">
+      <h2>Top 5 Leaderboard</h2>
+      <p class="leaderboard-note">Fastest successful completion times.</p>
+      <div id="leaderboardList" class="leaderboard-list"></div>
     </section>
 
     <section class="card hidden" id="scoreCard">
@@ -58,12 +54,9 @@
       <p id="scoreValue" class="score-value">0 ms</p>
       <p id="scoreContext" class="score-context"></p>
       <p id="personalBest" class="personal-best"></p>
-    </section>
-
-    <section class="card" id="leaderboardCard">
-      <h2>Top 5 Leaderboard</h2>
-      <p class="leaderboard-note">Fastest successful completion times.</p>
-      <div id="leaderboardList" class="leaderboard-list"></div>
+      <div class="score-actions">
+        <button id="retryBtn">Play Again</button>
+      </div>
     </section>
 
     <section class="card hidden" id="adminCard">
@@ -80,6 +73,41 @@
       <p id="adminStatus" class="status"></p>
     </section>
   </main>
-  <script src="/app.js?v=3"></script>
+
+  <div class="overlay hidden" id="flowOverlay">
+    <div class="modal" id="flowModal">
+      <p id="modalStep" class="modal-step"></p>
+      <h2 id="modalTitle"></h2>
+      <p id="modalDescription" class="modal-description"></p>
+
+      <div id="modalProfile" class="modal-section hidden">
+        <label>First Name <input id="modalFirstName" type="text" /></label>
+        <label>Last Name <input id="modalLastName" type="text" /></label>
+        <p id="modalProfileStatus" class="status"></p>
+      </div>
+
+      <div id="modalBaseline" class="modal-section hidden">
+        <p class="banner" id="modalBaselineBanner"></p>
+      </div>
+
+      <div id="modalLabels" class="modal-section hidden">
+        <label>Drinking level
+          <select id="modalAlcoholStatus">
+            <option value="no">No alcohol</option>
+            <option value="a_couple">A couple drinks</option>
+            <option value="yes">Yes (more than a couple)</option>
+          </select>
+        </label>
+        <label>Hours slept
+          <input id="modalSleepHours" type="number" min="0" max="24" step="0.5" value="8" />
+        </label>
+      </div>
+
+      <div class="modal-actions">
+        <button id="modalPrimaryBtn">Continue</button>
+      </div>
+    </div>
+  </div>
+  <script src="/app.js?v=4"></script>
 </body>
 </html>
