@@ -361,17 +361,48 @@ function getActiveBall() {
   return getBallById(state.activeBallId);
 }
 
+function drawBasket(basket) {
+  const radius = 14;
+  const x = basket.x;
+  const y = basket.y;
+  const w = basket.w;
+  const h = basket.h;
+
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + w - radius, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+  ctx.lineTo(x + w, y + h - radius);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+  ctx.lineTo(x + radius, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+
+  ctx.fillStyle = "rgba(255, 255, 255, 0.84)";
+  ctx.fill();
+  ctx.strokeStyle = "#334155";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = "#334155";
+  ctx.font = "600 11px sans-serif";
+  const labels = {
+    topLeft: "TL",
+    topRight: "TR",
+    bottomLeft: "BL",
+    bottomRight: "BR",
+  };
+  ctx.fillText(labels[basket.id] || basket.id, x + 8, y + 16);
+}
+
 function draw() {
   ctx.clearRect(0, 0, els.canvas.width, els.canvas.height);
 
   for (const basket of state.baskets) {
     if (!basket.visible) continue;
-    ctx.strokeStyle = "#222";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(basket.x, basket.y, basket.w, basket.h);
-    ctx.font = "12px sans-serif";
-    ctx.fillStyle = "#111";
-    ctx.fillText(basket.id, basket.x + 5, basket.y + 15);
+    drawBasket(basket);
   }
 
   for (const ball of state.balls) {
@@ -547,6 +578,14 @@ function pointerUp(evt) {
   const { x, y } = canvasPos(evt);
   if (state.activePointerId === evt.pointerId) {
     const activeBall = getActiveBall();
+    if (activeBall && !activeBall.completed) {
+      activeBall.x = Math.max(activeBall.r, Math.min(els.canvas.width - activeBall.r, x));
+      activeBall.y = Math.max(activeBall.r, Math.min(els.canvas.height - activeBall.r, y));
+      const basket = findBasketForBall(activeBall);
+      if (basket) {
+        completeBall(activeBall, basket);
+      }
+    }
     appendEvent("touch_up", x, y, { ball_id: activeBall ? activeBall.id : null, hit: true });
     if (els.canvas.releasePointerCapture) {
       els.canvas.releasePointerCapture(evt.pointerId);
@@ -759,6 +798,13 @@ async function finishGame(success) {
 
   const durationMs = Math.max(1, Math.floor(state.endTs - state.startTs));
   const baselineFlag = state.baselineCompleted < BASELINE_REQUIRED;
+  els.scoreCard.classList.remove("hidden");
+  els.scoreValue.textContent = `${durationMs} ms`;
+  els.scoreContext.textContent = success
+    ? "Round complete. Saving result..."
+    : "Time ran out. Saving recorded result...";
+  els.gameStatus.textContent = success ? "Round complete." : "Round timed out.";
+  draw();
 
   try {
     const labelPayload = await submitLabelIfNeeded();
@@ -784,7 +830,6 @@ async function finishGame(success) {
     await refreshBaseline();
     await refreshUserStats();
     await refreshLeaderboard();
-    els.scoreCard.classList.remove("hidden");
     els.scoreValue.textContent = `${durationMs} ms`;
     els.scoreContext.textContent = success
       ? `Completed successfully in ${durationMs} ms.`
@@ -795,6 +840,9 @@ async function finishGame(success) {
     updateStepUI();
   } catch (err) {
     els.gameStatus.textContent = `Submit error: ${err.message}`;
+    els.scoreContext.textContent = success
+      ? `Completed in ${durationMs} ms, but saving failed.`
+      : `Recorded ${durationMs} ms, but saving failed.`;
     updateStepUI();
   }
 }
