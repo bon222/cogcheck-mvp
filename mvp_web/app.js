@@ -36,6 +36,10 @@ const els = {
   promptStatus: document.getElementById("promptStatus"),
   gameRunType: document.getElementById("gameRunType"),
   gameStatus: document.getElementById("gameStatus"),
+  gameStartOverlay: document.getElementById("gameStartOverlay"),
+  gameStartTitle: document.getElementById("gameStartTitle"),
+  gameStartCopy: document.getElementById("gameStartCopy"),
+  gameLaunchBtn: document.getElementById("gameLaunchBtn"),
   scoreValue: document.getElementById("scoreValue"),
   scoreContext: document.getElementById("scoreContext"),
   personalBest: document.getElementById("personalBest"),
@@ -87,6 +91,7 @@ const state = {
   alcoholStatus: "no",
   sleepHours: 8,
   coachAction: null,
+  runArmed: false,
 };
 
 function setScreen(name) {
@@ -180,6 +185,28 @@ function updateIntroScreen() {
   setScreen("intro");
 }
 
+function refreshIntroCopyOnly() {
+  if (!state.userId) return;
+  updateLoggedInUser();
+  updateBaselineProgress();
+  if (state.baselineCompleted < BASELINE_REQUIRED) {
+    const left = BASELINE_REQUIRED - state.baselineCompleted;
+    els.introTitle.textContent = "Build Your Baseline";
+    els.introCopy.textContent = "We need 3 strong baseline runs before normal testing starts.";
+    els.baselineBanner.textContent = `We need you at peak cognitive function with no drinking and good sleep for ${left} more baseline run${left === 1 ? "" : "s"}.`;
+    els.baselineStatus.textContent = `Baseline progress: ${state.baselineCompleted}/${BASELINE_REQUIRED}`;
+    els.nextStep.textContent = "Next: start a baseline run.";
+    els.startBtn.textContent = "Start Baseline Run";
+  } else {
+    els.introTitle.textContent = "Normal Testing Ready";
+    els.introCopy.textContent = "Your baseline is complete. Normal runs will ask for drinking and sleep levels first.";
+    els.baselineBanner.textContent = "Baseline complete.";
+    els.baselineStatus.textContent = `Baseline locked at ${state.baselineCompleted}/${BASELINE_REQUIRED} runs.`;
+    els.nextStep.textContent = "Next: continue to the prompt and start a run.";
+    els.startBtn.textContent = "Continue to Prompt";
+  }
+}
+
 function renderLeaderboard(entries) {
   if (!entries.length) {
     els.leaderboardList.innerHTML = '<div class="leaderboard-row"><span class="leaderboard-rank">-</span><span class="leaderboard-name">No scores yet</span><span class="leaderboard-score">-</span></div>';
@@ -227,7 +254,8 @@ async function refreshUserStats() {
   }
 }
 
-async function refreshBaseline() {
+async function refreshBaseline(options = {}) {
+  const navigate = options.navigate ?? true;
   if (!state.userId) return;
   const res = await fetch(`${state.backendUrl}/baseline/${state.userId}`);
   const text = await res.text();
@@ -239,7 +267,8 @@ async function refreshBaseline() {
   }
   if (!res.ok) throw new Error(body.detail || "Baseline fetch failed");
   state.baselineCompleted = body.baseline_attempts_completed;
-  updateIntroScreen();
+  refreshIntroCopyOnly();
+  if (navigate) updateIntroScreen();
 }
 
 function setupBaskets() {
@@ -352,15 +381,15 @@ function drawBasket(basket) {
   ctx.quadraticCurveTo(x, y, x + radius, y);
   ctx.closePath();
 
-  ctx.fillStyle = "rgba(255, 255, 255, 0.84)";
+  ctx.fillStyle = "rgba(254, 244, 199, 0.96)";
   ctx.fill();
-  ctx.strokeStyle = "#334155";
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = "#8a5a00";
+  ctx.lineWidth = 2.5;
   ctx.stroke();
 
   const labels = { topLeft: "TL", topRight: "TR", bottomLeft: "BL", bottomRight: "BR" };
-  ctx.fillStyle = "#334155";
-  ctx.font = "600 11px sans-serif";
+  ctx.fillStyle = "#7c3f00";
+  ctx.font = "700 11px sans-serif";
   ctx.fillText(labels[basket.id] || basket.id, x + 8, y + 16);
 }
 
@@ -606,11 +635,25 @@ function buildSummary(durationMs) {
 function beginRun(runType) {
   state.pendingRunType = runType;
   resetGameState();
+  state.runArmed = true;
+  els.gameRunType.textContent = runType === "baseline" ? "Baseline Run" : "Normal Run";
+  els.gameStatus.textContent = "Press start when ready.";
+  els.gameStartTitle.textContent = runType === "baseline" ? "Baseline Run" : "Normal Run";
+  els.gameStartCopy.textContent =
+    "Drag each moving ball into any open corner as fast as you can. The order does not matter.";
+  els.gameStartOverlay.classList.remove("hidden");
+  setScreen("game");
+  draw();
+}
+
+function launchArmedRun() {
+  if (!state.runArmed) return;
+  state.runArmed = false;
+  els.gameStartOverlay.classList.add("hidden");
+  els.gameLaunchBtn.blur();
   state.running = true;
   state.startTs = performance.now();
-  els.gameRunType.textContent = runType === "baseline" ? "Baseline Run" : "Normal Run";
   els.gameStatus.textContent = "Round live. Drag all four balls into open corners.";
-  setScreen("game");
   draw();
   state.timeoutId = setTimeout(() => finishGame(false), GAME_MS);
   state.rafId = requestAnimationFrame(loop);
@@ -632,6 +675,7 @@ function showResult(durationMs, success, saving = true) {
 async function finishGame(success) {
   if (!state.running) return;
   state.running = false;
+  state.runArmed = false;
   if (state.rafId) cancelAnimationFrame(state.rafId);
   if (state.timeoutId) clearTimeout(state.timeoutId);
   state.endTs = performance.now();
@@ -670,7 +714,7 @@ async function finishGame(success) {
     const body = text ? JSON.parse(text) : {};
     if (!res.ok) throw new Error(body.detail || "Attempt submit failed");
 
-    await refreshBaseline();
+    await refreshBaseline({ navigate: false });
     await refreshUserStats();
     await refreshLeaderboard();
     showResult(durationMs, success, false);
@@ -741,6 +785,7 @@ function clearSessionForNewUser() {
   state.pendingRunType = null;
   state.alcoholStatus = "no";
   state.sleepHours = 8;
+  state.runArmed = false;
   localStorage.removeItem("userId");
   localStorage.removeItem("firstName");
   localStorage.removeItem("lastName");
@@ -751,6 +796,7 @@ function clearSessionForNewUser() {
   els.personalBest.textContent = "";
   els.scoreValue.textContent = "0 ms";
   els.scoreContext.textContent = "";
+  els.gameStartOverlay.classList.add("hidden");
   updateLoggedInUser();
   updateIntroScreen();
 }
@@ -926,6 +972,7 @@ function bindEvents() {
   els.resultLeaderboardBtn.addEventListener("click", () => setScreen("leaderboard"));
   els.resultSwitchUserBtn.addEventListener("click", clearSessionForNewUser);
   els.leaderboardBackBtn.addEventListener("click", updateIntroScreen);
+  els.gameLaunchBtn.addEventListener("click", launchArmedRun);
   els.coachButton.addEventListener("click", () => {
     if (typeof state.coachAction === "function") {
       state.coachAction();
