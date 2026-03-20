@@ -95,6 +95,8 @@ const state = {
   runArmed: false,
   leaderboardReturnScreen: "intro",
   lastTapAt: 0,
+  savingResult: false,
+  latestScoreMs: null,
 };
 
 function setScreen(name) {
@@ -203,6 +205,10 @@ function returnFromLeaderboard() {
 
 function bindTapAction(el, action) {
   const handler = (evt) => {
+    if (state.savingResult) {
+      evt.preventDefault();
+      return;
+    }
     const now = Date.now();
     if (now - state.lastTapAt < 250) {
       evt.preventDefault();
@@ -213,6 +219,13 @@ function bindTapAction(el, action) {
   };
   el.addEventListener("pointerup", handler);
   el.addEventListener("click", (evt) => evt.preventDefault());
+}
+
+function setResultActionsDisabled(disabled) {
+  state.savingResult = disabled;
+  els.retryBtn.disabled = disabled;
+  els.resultLeaderboardBtn.disabled = disabled;
+  els.resultSwitchUserBtn.disabled = disabled;
 }
 
 function renderLeaderboard(entries) {
@@ -226,7 +239,7 @@ function renderLeaderboard(entries) {
         <div class="leaderboard-row">
           <span class="leaderboard-rank">#${entry.rank}</span>
           <span class="leaderboard-name">${entry.first_name} ${entry.last_name}</span>
-          <span class="leaderboard-score">${entry.best_duration_ms} ms</span>
+          <span class="leaderboard-score">${entry.best_score_ms} ms</span>
         </div>
       `
     )
@@ -256,7 +269,7 @@ async function refreshUserStats() {
     const body = text ? JSON.parse(text) : {};
     if (!res.ok) throw new Error(body.detail || "Stats fetch failed");
     els.personalBest.textContent =
-      body.best_duration_ms == null ? "No personal best yet." : `Your best score: ${body.best_duration_ms} ms`;
+      body.best_score_ms == null ? "No personal best yet." : `Your best score: ${body.best_score_ms} ms`;
   } catch {
     els.personalBest.textContent = "";
   }
@@ -619,20 +632,32 @@ function buildSummary(durationMs) {
   const perBall = {};
   for (const ball of state.balls) {
     const completion = state.completionLog.find((item) => item.ball_id === ball.id) || null;
+    const unresolvedTimeMs =
+      Math.max(
+        0,
+        (completion ? completion.t_ms : durationMs) - ball.spawnDelayMs
+      );
     perBall[ball.id] = {
       spawn_delay_ms: ball.spawnDelayMs,
       first_touch_ms: state.ballFirstTouchMs[ball.id] ?? null,
       completion_t_ms: completion ? completion.t_ms : null,
       completion_order: completion ? completion.order : null,
       corner_id: completion ? completion.corner_id : null,
+      unresolved_time_ms: unresolvedTimeMs,
     };
   }
+
+  const activeBallTimeMs = Object.values(perBall).reduce(
+    (total, ball) => total + (ball.unresolved_time_ms || 0),
+    0
+  );
 
   return {
     balls_completed: ballsCompleted,
     completion_ratio: ballsCompleted / 4,
     total_events: state.events.length,
     duration_ms: durationMs,
+    active_ball_time_ms: activeBallTimeMs,
     total_taps: totalTaps,
     empty_taps: emptyTaps,
     completion_order: state.completionLog,
@@ -668,15 +693,17 @@ function launchArmedRun() {
 }
 
 function showResult(durationMs, success, saving = true) {
+  const scoreMs = state.latestScoreMs ?? durationMs;
+  setResultActionsDisabled(saving);
   els.resultTitle.textContent = success ? "Run Complete" : "Run Timed Out";
-  els.scoreValue.textContent = `${durationMs} ms`;
+  els.scoreValue.textContent = `${scoreMs} ms`;
   els.scoreContext.textContent = saving
     ? success
-      ? "Round complete. Saving result..."
-      : "Time ran out. Saving recorded result..."
+      ? "Round complete. Saving score..."
+      : "Time ran out. Saving recorded score..."
     : success
-      ? `Completed successfully in ${durationMs} ms.`
-      : `Round ended before all corners were filled. Time recorded: ${durationMs} ms.`;
+      ? `Score saved. Lower is better.`
+      : `Score recorded from unresolved ball time. Lower is better.`;
   setScreen("result");
 }
 
@@ -693,6 +720,8 @@ async function finishGame(success) {
 
   const durationMs = Math.max(1, Math.floor(state.endTs - state.startTs));
   const baselineFlag = state.pendingRunType === "baseline";
+  const summary = buildSummary(durationMs);
+  state.latestScoreMs = summary.active_ball_time_ms;
   draw();
   showResult(durationMs, success, true);
 
@@ -707,7 +736,7 @@ async function finishGame(success) {
       baseline_flag: baselineFlag,
       duration_ms: durationMs,
       success,
-      summary: buildSummary(durationMs),
+      summary,
       raw_events: state.events,
       alcohol_status: baselineFlag ? null : state.alcoholStatus,
       sleep_hours: baselineFlag ? null : sleepValue,
@@ -728,8 +757,8 @@ async function finishGame(success) {
     showResult(durationMs, success, false);
   } catch (err) {
     els.scoreContext.textContent = success
-      ? `Completed in ${durationMs} ms, but saving failed.`
-      : `Recorded ${durationMs} ms, but saving failed.`;
+      ? `Score ${state.latestScoreMs} ms, but saving failed.`
+      : `Score ${state.latestScoreMs} ms, but saving failed.`;
     els.gameStatus.textContent = `Submit error: ${err.message}`;
   }
 }
@@ -804,7 +833,9 @@ function clearSessionForNewUser() {
   els.personalBest.textContent = "";
   els.scoreValue.textContent = "0 ms";
   els.scoreContext.textContent = "";
+  state.latestScoreMs = null;
   els.gameStartOverlay.classList.add("hidden");
+  setResultActionsDisabled(false);
   updateLoggedInUser();
   updateIntroScreen();
 }
@@ -1002,6 +1033,7 @@ function bindEvents() {
 }
 
 async function init() {
+  setResultActionsDisabled(false);
   bindEvents();
   resizeCanvas();
   window.addEventListener("resize", resizeCanvas);

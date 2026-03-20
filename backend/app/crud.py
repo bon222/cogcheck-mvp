@@ -6,6 +6,14 @@ from . import models, schemas
 BASELINE_REQUIRED_ATTEMPTS = 3
 
 
+def _attempt_score_ms(attempt: models.Attempt) -> int | None:
+    if isinstance(attempt.summary, dict):
+        score = attempt.summary.get("active_ball_time_ms")
+        if isinstance(score, int):
+            return score
+    return attempt.duration_ms
+
+
 def get_user(db: Session, user_id: str) -> models.User | None:
     return db.scalar(select(models.User).where(models.User.id == user_id))
 
@@ -114,42 +122,45 @@ def get_user_stats(db: Session, user_id: str) -> schemas.UserStatsOut | None:
         )
         or 0
     )
-    best_duration_ms = db.scalar(
-        select(func.min(models.Attempt.duration_ms))
+    successful_attempts_rows = db.scalars(
+        select(models.Attempt)
         .where(models.Attempt.user_id == user_id)
         .where(models.Attempt.success.is_(True))
-    )
+    ).all()
+    scores = [score for attempt in successful_attempts_rows if (score := _attempt_score_ms(attempt)) is not None]
+    best_score_ms = min(scores) if scores else None
 
     return schemas.UserStatsOut(
         user_id=user.id,
         first_name=user.first_name,
         last_name=user.last_name,
-        best_duration_ms=best_duration_ms,
+        best_score_ms=best_score_ms,
         total_attempts=total_attempts,
         successful_attempts=successful_attempts,
     )
 
 
 def get_leaderboard(db: Session, limit: int = 5) -> list[schemas.LeaderboardEntryOut]:
-    stmt = (
-        select(
-            models.User.first_name,
-            models.User.last_name,
-            func.min(models.Attempt.duration_ms).label("best_duration_ms"),
-        )
-        .join(models.Attempt, models.Attempt.user_id == models.User.id)
-        .where(models.Attempt.success.is_(True))
-        .group_by(models.User.id, models.User.first_name, models.User.last_name)
-        .order_by(func.min(models.Attempt.duration_ms).asc(), models.User.last_name.asc(), models.User.first_name.asc())
-        .limit(limit)
-    )
-    rows = db.execute(stmt).all()
+    users = db.scalars(select(models.User)).all()
+    rows: list[tuple[str, str, int]] = []
+    for user in users:
+        attempts = db.scalars(
+            select(models.Attempt)
+            .where(models.Attempt.user_id == user.id)
+            .where(models.Attempt.success.is_(True))
+        ).all()
+        scores = [score for attempt in attempts if (score := _attempt_score_ms(attempt)) is not None]
+        if scores:
+            rows.append((user.first_name, user.last_name, min(scores)))
+
+    rows.sort(key=lambda row: (row[2], row[1].lower(), row[0].lower()))
+    rows = rows[:limit]
     return [
         schemas.LeaderboardEntryOut(
             rank=index + 1,
-            first_name=row.first_name,
-            last_name=row.last_name,
-            best_duration_ms=row.best_duration_ms,
+            first_name=row[0],
+            last_name=row[1],
+            best_score_ms=row[2],
         )
         for index, row in enumerate(rows)
     ]
