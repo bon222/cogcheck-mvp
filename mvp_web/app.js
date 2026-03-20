@@ -6,21 +6,28 @@ const DEFAULT_BACKEND_URL =
     : "http://127.0.0.1:8000";
 
 const els = {
+  profileCard: document.getElementById("profileCard"),
+  firstName: document.getElementById("firstName"),
+  lastName: document.getElementById("lastName"),
   saveProfileBtn: document.getElementById("saveProfileBtn"),
   switchUserBtn: document.getElementById("switchUserBtn"),
   loggedInUser: document.getElementById("loggedInUser"),
   profileStatus: document.getElementById("profileStatus"),
+  baselineCard: document.getElementById("baselineCard"),
   baselineBanner: document.getElementById("baselineBanner"),
   baselineProgressFill: document.getElementById("baselineProgressFill"),
   baselineProgressText: document.getElementById("baselineProgressText"),
   baselineStatus: document.getElementById("baselineStatus"),
   nextStep: document.getElementById("nextStep"),
+  gameCard: document.getElementById("gameCard"),
+  gamePrep: document.getElementById("gamePrep"),
   startBtn: document.getElementById("startBtn"),
   gameStatus: document.getElementById("gameStatus"),
   scoreCard: document.getElementById("scoreCard"),
   scoreValue: document.getElementById("scoreValue"),
   scoreContext: document.getElementById("scoreContext"),
   personalBest: document.getElementById("personalBest"),
+  retryBtn: document.getElementById("retryBtn"),
   leaderboardList: document.getElementById("leaderboardList"),
   adminToken: document.getElementById("adminToken"),
   clearDbBtn: document.getElementById("clearDbBtn"),
@@ -31,20 +38,14 @@ const els = {
   adminStatus: document.getElementById("adminStatus"),
   adminCard: document.getElementById("adminCard"),
   canvas: document.getElementById("gameCanvas"),
-  retryBtn: document.getElementById("retryBtn"),
   flowOverlay: document.getElementById("flowOverlay"),
   modalStep: document.getElementById("modalStep"),
   modalTitle: document.getElementById("modalTitle"),
   modalDescription: document.getElementById("modalDescription"),
-  modalProfile: document.getElementById("modalProfile"),
-  modalFirstName: document.getElementById("modalFirstName"),
-  modalLastName: document.getElementById("modalLastName"),
-  modalProfileStatus: document.getElementById("modalProfileStatus"),
-  modalBaseline: document.getElementById("modalBaseline"),
-  modalBaselineBanner: document.getElementById("modalBaselineBanner"),
-  modalLabels: document.getElementById("modalLabels"),
+  modalFields: document.getElementById("modalFields"),
   modalAlcoholStatus: document.getElementById("modalAlcoholStatus"),
   modalSleepHours: document.getElementById("modalSleepHours"),
+  modalCancelBtn: document.getElementById("modalCancelBtn"),
   modalPrimaryBtn: document.getElementById("modalPrimaryBtn"),
 };
 
@@ -69,9 +70,9 @@ let state = {
   completionLog: [],
   ballFirstTouchMs: {},
   freePointerId: null,
-  modalStage: null,
   alcoholStatus: "no",
   sleepHours: 8,
+  modalAction: null,
 };
 
 function resizeCanvas() {
@@ -103,16 +104,15 @@ function clearSessionForNewUser() {
   localStorage.removeItem("firstName");
   localStorage.removeItem("lastName");
   persistSession();
-  els.modalFirstName.value = "";
-  els.modalLastName.value = "";
+  els.firstName.value = "";
+  els.lastName.value = "";
   els.profileStatus.textContent = "Switched user. Enter new name and save profile.";
   els.baselineStatus.textContent = "Not loaded yet.";
   els.baselineBanner.textContent = "Complete 3 baseline runs first.";
   els.nextStep.textContent = "Next: Save profile, then complete baseline 3 times.";
   updateLoggedInUser();
   updateBaselineProgress();
-  updateLabelVisibility();
-  showModal("profile");
+  updateStepUI();
 }
 
 function resetScoreCard() {
@@ -122,57 +122,62 @@ function resetScoreCard() {
   els.personalBest.textContent = "";
 }
 
-function setModalSection(sectionEl) {
-  [els.modalProfile, els.modalBaseline, els.modalLabels].forEach((el) => el.classList.add("hidden"));
-  if (sectionEl) sectionEl.classList.remove("hidden");
+function getFirstTimeKey(name) {
+  return state.userId ? `${name}:${state.userId}` : name;
 }
 
-function showModal(stage) {
-  state.modalStage = stage;
-  els.flowOverlay.classList.remove("hidden");
+function hasSeen(name) {
+  return localStorage.getItem(getFirstTimeKey(name)) === "1";
+}
 
-  if (stage === "profile") {
-    els.modalStep.textContent = "Step 1";
-    els.modalTitle.textContent = "Sign in to continue";
-    els.modalDescription.textContent = "Enter your name so we can keep your baseline and best score.";
-    els.modalPrimaryBtn.textContent = "Save Profile";
-    els.modalFirstName.value = localStorage.getItem("firstName") || "";
-    els.modalLastName.value = localStorage.getItem("lastName") || "";
-    els.modalProfileStatus.textContent = "";
-    setModalSection(els.modalProfile);
-    return;
-  }
+function markSeen(name) {
+  localStorage.setItem(getFirstTimeKey(name), "1");
+}
 
-  if (stage === "baseline") {
-    const left = Math.max(0, BASELINE_REQUIRED - state.baselineCompleted);
-    els.modalStep.textContent = "Step 2";
-    els.modalTitle.textContent = "Baseline required";
-    els.modalDescription.textContent = "Do this at your best cognitive level. We use these runs to compare future performance.";
-    els.modalBaselineBanner.textContent = `You need ${left} more baseline run${left === 1 ? "" : "s"} before normal play.`;
-    els.modalPrimaryBtn.textContent = "Start Baseline Run";
-    setModalSection(els.modalBaseline);
-    return;
-  }
-
-  if (stage === "labels") {
-    els.modalStep.textContent = "Step 2";
-    els.modalTitle.textContent = "Before you play";
-    els.modalDescription.textContent = "Log current drinking and sleep levels for this attempt.";
+function showModal({ step = "", title, description, showFields = false, primaryText = "Continue", cancelText = "", onConfirm = null }) {
+  state.modalAction = onConfirm;
+  els.modalStep.textContent = step;
+  els.modalTitle.textContent = title;
+  els.modalDescription.textContent = description;
+  els.modalFields.classList.toggle("hidden", !showFields);
+  els.modalPrimaryBtn.textContent = primaryText;
+  if (showFields) {
     els.modalAlcoholStatus.value = state.alcoholStatus;
     els.modalSleepHours.value = state.sleepHours;
-    els.modalPrimaryBtn.textContent = "Start Normal Run";
-    setModalSection(els.modalLabels);
   }
+  if (cancelText) {
+    els.modalCancelBtn.textContent = cancelText;
+    els.modalCancelBtn.classList.remove("hidden");
+  } else {
+    els.modalCancelBtn.classList.add("hidden");
+  }
+  els.flowOverlay.classList.remove("hidden");
 }
 
 function hideModal() {
-  state.modalStage = null;
+  state.modalAction = null;
   els.flowOverlay.classList.add("hidden");
 }
 
-function startRunNow() {
-  hideModal();
-  runGame();
+function updateStepUI() {
+  const loggedIn = Boolean(state.userId);
+  els.profileCard.classList.toggle("locked", false);
+  els.baselineCard.classList.toggle("locked", !loggedIn);
+  els.gameCard.classList.toggle("locked", !loggedIn);
+  els.startBtn.disabled = !loggedIn || state.running;
+
+  if (!loggedIn) {
+    els.gamePrep.textContent = "Step 1: save your profile to begin.";
+    return;
+  }
+
+  if (state.baselineCompleted < BASELINE_REQUIRED) {
+    const left = BASELINE_REQUIRED - state.baselineCompleted;
+    els.gamePrep.textContent = `Step 2: complete ${left} more baseline run${left === 1 ? "" : "s"} while fully alert.`;
+    return;
+  }
+
+  els.gamePrep.textContent = "Step 3: each normal run starts with drinking and sleep questions, then the game begins.";
 }
 
 function appendEvent(eventType, x = null, y = null, payload = null) {
@@ -583,24 +588,17 @@ async function refreshBaseline() {
     els.baselineBanner.textContent = `Baseline required: complete ${left} more run(s) while you are at your best cognitive state.`;
     els.nextStep.textContent = `Next: Press Start Game and finish ${left} more baseline run(s).`;
   }
-  updateLabelVisibility();
-}
-
-function updateLabelVisibility() {
-  if (state.baselineCompleted >= BASELINE_REQUIRED) {
-    state.alcoholStatus = els.modalAlcoholStatus.value;
-    state.sleepHours = Number(els.modalSleepHours.value) || 8;
-  }
+  updateStepUI();
 }
 
 async function saveProfile() {
-  const firstName = els.modalFirstName.value.trim();
-  const lastName = els.modalLastName.value.trim();
+  const firstName = els.firstName.value.trim();
+  const lastName = els.lastName.value.trim();
   if (!firstName || !lastName) {
-    els.modalProfileStatus.textContent = "Enter first and last name.";
+    els.profileStatus.textContent = "Enter first and last name.";
     return;
   }
-  els.modalProfileStatus.textContent = "Saving profile...";
+  els.profileStatus.textContent = "Saving profile...";
   const res = await fetch(`${state.backendUrl}/users/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -630,10 +628,19 @@ async function saveProfile() {
     await refreshBaseline();
     await refreshUserStats();
     await refreshLeaderboard();
-    if (state.baselineCompleted < BASELINE_REQUIRED) {
-      showModal("baseline");
-    } else {
-      hideModal();
+    updateStepUI();
+    if (!hasSeen("welcome")) {
+      showModal({
+        step: "Welcome",
+        title: "How this works",
+        description:
+          "First complete 3 baseline runs while fully alert. After baseline, each run asks for drinking and sleep levels, then shows your score and best time.",
+        primaryText: "Got it",
+        onConfirm: () => {
+          markSeen("welcome");
+          hideModal();
+        },
+      });
     }
   } catch (err) {
     els.profileStatus.textContent = `Profile saved. Baseline status error: ${err.message}`;
@@ -644,22 +651,59 @@ function runGame() {
   resetGameState();
   resetScoreCard();
   state.running = true;
+  updateStepUI();
   state.startTs = performance.now();
   els.gameStatus.textContent = "Game running (4 random moving balls, max 30s)...";
   state.timeoutId = setTimeout(() => finishGame(false), GAME_MS);
   state.rafId = requestAnimationFrame(loop);
 }
 
+function launchBaselineRun() {
+  hideModal();
+  runGame();
+}
+
+function launchNormalRun() {
+  state.alcoholStatus = els.modalAlcoholStatus.value;
+  state.sleepHours = Number(els.modalSleepHours.value) || 8;
+  hideModal();
+  runGame();
+}
+
 function startGame() {
   if (!state.userId) {
-    showModal("profile");
+    els.gameStatus.textContent = "Save profile first.";
     return;
   }
+
   if (state.baselineCompleted < BASELINE_REQUIRED) {
-    showModal("baseline");
+    const left = BASELINE_REQUIRED - state.baselineCompleted;
+    showModal({
+      step: "Baseline",
+      title: "Baseline run",
+      description: `This run is part of your baseline. Complete ${left} more run${left === 1 ? "" : "s"} while fully alert so future scores can be compared fairly.`,
+      primaryText: "Start Baseline Run",
+      onConfirm: launchBaselineRun,
+    });
     return;
   }
-  showModal("labels");
+
+  const title = hasSeen("normal_instructions") ? "Before this run" : "Normal runs";
+  const description = hasSeen("normal_instructions")
+    ? "Update your drinking and sleep levels for this run, then start the game."
+    : "From now on, every run records your current drinking and sleep levels before the game starts. Your score appears immediately after the round.";
+  showModal({
+    step: "Normal Run",
+    title,
+    description,
+    showFields: true,
+    primaryText: "Start Normal Run",
+    cancelText: "Cancel",
+    onConfirm: () => {
+      markSeen("normal_instructions");
+      launchNormalRun();
+    },
+  });
 }
 
 async function submitLabelIfNeeded() {
@@ -748,29 +792,28 @@ async function finishGame(success) {
     els.gameStatus.textContent = baselineFlag
       ? `Baseline run submitted (${durationMs}ms).`
       : `Normal run submitted (${durationMs}ms).`;
+    updateStepUI();
   } catch (err) {
     els.gameStatus.textContent = `Submit error: ${err.message}`;
+    updateStepUI();
   }
 }
 
 function bindEvents() {
-  els.saveProfileBtn.addEventListener("click", () => showModal("profile"));
+  els.saveProfileBtn.addEventListener("click", () => {
+    saveProfile().catch((err) => (els.profileStatus.textContent = `Error: ${err.message}`));
+  });
   els.switchUserBtn.addEventListener("click", clearSessionForNewUser);
   els.startBtn.addEventListener("click", startGame);
   els.retryBtn.addEventListener("click", startGame);
   els.modalPrimaryBtn.addEventListener("click", () => {
-    if (state.modalStage === "profile") {
-      saveProfile().catch((err) => {
-        els.modalProfileStatus.textContent = `Error: ${err.message}`;
-      });
-      return;
+    if (typeof state.modalAction === "function") {
+      state.modalAction();
+    } else {
+      hideModal();
     }
-    if (state.modalStage === "labels") {
-      state.alcoholStatus = els.modalAlcoholStatus.value;
-      state.sleepHours = Number(els.modalSleepHours.value) || 8;
-    }
-    startRunNow();
   });
+  els.modalCancelBtn.addEventListener("click", hideModal);
   els.canvas.addEventListener("pointerdown", pointerDown);
   els.canvas.addEventListener("pointermove", pointerMove);
   els.canvas.addEventListener("pointerup", pointerUp);
@@ -808,6 +851,7 @@ async function resetDatabase() {
     updateStartButtonLabel();
     resetScoreCard();
     renderLeaderboard([]);
+    updateStepUI();
   } catch (err) {
     els.adminStatus.textContent = `Reset error (v3): ${err.message}`;
   }
@@ -839,6 +883,7 @@ async function clearDatabase() {
     updateStartButtonLabel();
     resetScoreCard();
     renderLeaderboard([]);
+    updateStepUI();
   } catch (err) {
     els.adminStatus.textContent = `Clear error (v3): ${err.message}`;
   }
@@ -883,8 +928,8 @@ function downloadCsv(table) {
 
 function init() {
   loadSession();
-  els.modalFirstName.value = localStorage.getItem("firstName") || "";
-  els.modalLastName.value = localStorage.getItem("lastName") || "";
+  els.firstName.value = localStorage.getItem("firstName") || "";
+  els.lastName.value = localStorage.getItem("lastName") || "";
   updateLoggedInUser();
   persistSession();
   bindEvents();
@@ -903,13 +948,12 @@ function init() {
     refreshUserStats();
     els.profileStatus.textContent = "Session resumed for this device.";
   } else {
-    updateLabelVisibility();
     els.baselineBanner.textContent = "Complete 3 baseline runs first.";
     els.nextStep.textContent = "Next: Save profile, then complete 3 baseline runs.";
     updateBaselineProgress();
     updateStartButtonLabel();
-    showModal("profile");
   }
+  updateStepUI();
   refreshLeaderboard();
 }
 
