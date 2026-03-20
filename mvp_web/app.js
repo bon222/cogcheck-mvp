@@ -48,6 +48,7 @@ const els = {
   retryBtn: document.getElementById("retryBtn"),
   resultLeaderboardBtn: document.getElementById("resultLeaderboardBtn"),
   resultSwitchUserBtn: document.getElementById("resultSwitchUserBtn"),
+  leaderboardCopy: document.getElementById("leaderboardCopy"),
   leaderboardList: document.getElementById("leaderboardList"),
   leaderboardBackBtn: document.getElementById("leaderboardBackBtn"),
   adminCard: document.getElementById("adminCard"),
@@ -238,6 +239,14 @@ function getScoreLabel() {
   return state.scoreMode === "duration_ms" ? "completion time" : "active ball time";
 }
 
+function updateScoreModeCopy() {
+  if (!els.leaderboardCopy) return;
+  els.leaderboardCopy.textContent =
+    state.scoreMode === "duration_ms"
+      ? "Lowest completion-time scores across all players."
+      : "Lowest active-ball-time scores across all players.";
+}
+
 function getDisplayScoreMs(summary, durationMs) {
   if (state.scoreMode === "duration_ms") return durationMs;
   if (summary && typeof summary.active_ball_time_ms === "number") return summary.active_ball_time_ms;
@@ -299,9 +308,11 @@ async function refreshScoreMode() {
     if (!res.ok) throw new Error(body.detail || "Score mode fetch failed");
     state.scoreMode = body.score_mode || "active_ball_time_ms";
     if (els.scoreModeSelect) els.scoreModeSelect.value = state.scoreMode;
+    updateScoreModeCopy();
   } catch {
     state.scoreMode = "active_ball_time_ms";
     if (els.scoreModeSelect) els.scoreModeSelect.value = state.scoreMode;
+    updateScoreModeCopy();
   }
 }
 
@@ -1059,6 +1070,7 @@ async function saveScoreMode() {
     if (!res.ok) throw new Error(body.detail || "Save score mode failed");
     state.scoreMode = body.score_mode;
     els.scoreModeSelect.value = state.scoreMode;
+    updateScoreModeCopy();
     els.adminStatus.textContent = `Score mode saved: ${state.scoreMode}`;
     refreshVisibleResultScore();
     await refreshUserStats();
