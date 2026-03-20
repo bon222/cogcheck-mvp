@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CogCheck MVP - Game 1</title>
-  <link rel="stylesheet" href="/styles.css?v=8" />
+  <link rel="stylesheet" href="/styles.css?v=10" />
 </head>
 <body>
   <main class="app-shell">
@@ -78,7 +78,16 @@
             <p id="gameStatus" class="status compact-status"></p>
           </div>
         </div>
-        <canvas id="gameCanvas" width="360" height="640"></canvas>
+        <div class="game-stage">
+          <canvas id="gameCanvas" width="360" height="640"></canvas>
+          <div id="gameStartOverlay" class="game-start-overlay">
+            <div class="game-start-card">
+              <h2 id="gameStartTitle">Ready?</h2>
+              <p id="gameStartCopy" class="screen-copy"></p>
+              <button id="gameLaunchBtn">Start</button>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -135,6 +144,6 @@
     </div>
   </div>
 
-  <script src="/app.js?v=8"></script>
+  <script src="/app.js?v=10"></script>
 </body>
 </html>
