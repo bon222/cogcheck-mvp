@@ -23,6 +23,7 @@ body {
 
 .app-header {
   margin-bottom: 18px;
+  text-align: center;
 }
 
 .eyebrow,
@@ -45,8 +46,20 @@ h2 {
   color: #475569;
 }
 
+.app-header h1 {
+  font-size: clamp(30px, 7vw, 54px);
+  letter-spacing: 0.08em;
+}
+
 .screen {
   display: block;
+}
+
+#screenGame,
+#screenResult {
+  min-height: calc(100vh - 90px);
+  display: grid;
+  place-items: center;
 }
 
 .panel {
@@ -64,6 +77,7 @@ h2 {
 
 .game-panel {
   padding: 18px;
+  width: min(520px, 100%);
 }
 
 .result-panel {
@@ -190,6 +204,20 @@ button:disabled {
   align-items: flex-start;
 }
 
+body.game-mode .app-header {
+  display: none;
+}
+
+body.game-mode .app-shell {
+  width: 100%;
+  max-width: none;
+  padding: 8px 10px 12px;
+}
+
+body.game-mode #screenGame {
+  min-height: calc(100vh - 20px);
+}
+
 .game-meta {
   display: grid;
   gap: 8px;
@@ -197,10 +225,10 @@ button:disabled {
 }
 
 .pill {
-  background: #dbeafe;
-  border: 1px solid #bfdbfe;
+  background: #ecfccb;
+  border: 1px solid #bef264;
   font-weight: 800;
-  color: #1d4ed8;
+  color: #3f6212;
 }
 
 #gameCanvas {

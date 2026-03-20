@@ -4,14 +4,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CogCheck MVP - Game 1</title>
-  <link rel="stylesheet" href="/styles.css?v=7" />
+  <link rel="stylesheet" href="/styles.css?v=8" />
 </head>
 <body>
   <main class="app-shell">
-    <header class="app-header">
-      <p class="eyebrow">CogCheck</p>
-      <h1>Corner Ball Checkpoint</h1>
-      <p class="lead">A fast cognition check built around one short motion task.</p>
+    <header class="app-header" id="appHeader">
+      <h1>COGCHECK</h1>
     </header>
 
     <section class="screen" id="screenLogin">
@@ -75,16 +73,11 @@
     <section class="screen hidden" id="screenGame">
       <div class="panel game-panel">
         <div class="game-header">
-          <div>
-            <p class="screen-step">Game</p>
-            <h2>Drag Any Ball Into Any Open Corner</h2>
-          </div>
           <div class="game-meta">
             <p id="gameRunType" class="pill"></p>
             <p id="gameStatus" class="status compact-status"></p>
           </div>
         </div>
-        <p class="screen-copy">Four balls spawn and move randomly. Fill all four corners as fast as possible.</p>
         <canvas id="gameCanvas" width="360" height="640"></canvas>
       </div>
     </section>
@@ -99,7 +92,7 @@
         <div class="button-row">
           <button id="retryBtn">Play Again</button>
           <button id="resultLeaderboardBtn" class="secondary">Leaderboard</button>
-          <button id="resultHomeBtn" class="secondary">Home</button>
+          <button id="resultSwitchUserBtn" class="secondary">Switch User</button>
         </div>
       </div>
     </section>
@@ -142,6 +135,6 @@
     </div>
   </div>
 
-  <script src="/app.js?v=7"></script>
+  <script src="/app.js?v=8"></script>
 </body>
 </html>

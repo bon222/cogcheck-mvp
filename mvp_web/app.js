@@ -42,7 +42,7 @@ const els = {
   resultTitle: document.getElementById("resultTitle"),
   retryBtn: document.getElementById("retryBtn"),
   resultLeaderboardBtn: document.getElementById("resultLeaderboardBtn"),
-  resultHomeBtn: document.getElementById("resultHomeBtn"),
+  resultSwitchUserBtn: document.getElementById("resultSwitchUserBtn"),
   leaderboardList: document.getElementById("leaderboardList"),
   leaderboardBackBtn: document.getElementById("leaderboardBackBtn"),
   adminCard: document.getElementById("adminCard"),
@@ -94,6 +94,7 @@ function setScreen(name) {
     el.classList.toggle("hidden", key !== name);
   });
   state.currentScreen = name;
+  document.body.classList.toggle("game-mode", name === "game");
 }
 
 function showCoach({ step = "", title, body, buttonText = "Continue", onConfirm = null }) {
@@ -163,8 +164,8 @@ function updateIntroScreen() {
   if (state.baselineCompleted < BASELINE_REQUIRED) {
     const left = BASELINE_REQUIRED - state.baselineCompleted;
     els.introTitle.textContent = "Build Your Baseline";
-    els.introCopy.textContent = "You need 3 strong baseline runs before normal testing starts.";
-    els.baselineBanner.textContent = `Complete ${left} more baseline run${left === 1 ? "" : "s"} while fully alert.`;
+    els.introCopy.textContent = "We need 3 strong baseline runs before normal testing starts.";
+    els.baselineBanner.textContent = `We need you at peak cognitive function with no drinking and good sleep for ${left} more baseline run${left === 1 ? "" : "s"}.`;
     els.baselineStatus.textContent = `Baseline progress: ${state.baselineCompleted}/${BASELINE_REQUIRED}`;
     els.nextStep.textContent = "Next: start a baseline run.";
     els.startBtn.textContent = "Start Baseline Run";
@@ -764,19 +765,38 @@ function handleStartFromIntro() {
     if (!hasSeen("baseline_guide")) {
       showCoach({
         step: "Baseline",
-        title: "Use your best state",
+        title: "Peak cognitive function only",
         body:
-          "Baseline runs should be done when you are fully alert. These runs become your personal reference point, so take them seriously.",
-        buttonText: "Start Baseline Run",
+          "We need you to be at peak cognitive function with no drinking and good sleep 3 times when first playing the game. These runs become your personal reference point.",
+        buttonText: "Continue",
         onConfirm: () => {
           markSeen("baseline_guide");
-          hideCoach();
-          beginRun("baseline");
+          showCoach({
+            step: "How to play",
+            title: "Corner Ball Checkpoint",
+            body:
+              "You will see four moving balls and four open corners. Drag each ball into any corner as fast as you can. The order does not matter, but each corner can only be used once.",
+            buttonText: "Start Baseline Run",
+            onConfirm: () => {
+              hideCoach();
+              beginRun("baseline");
+            },
+          });
         },
       });
       return;
     }
-    beginRun("baseline");
+    showCoach({
+      step: "How to play",
+      title: "Corner Ball Checkpoint",
+      body:
+        "You will see four moving balls and four open corners. Drag each ball into any corner as fast as you can. The order does not matter, but each corner can only be used once.",
+      buttonText: "Start Baseline Run",
+      onConfirm: () => {
+        hideCoach();
+        beginRun("baseline");
+      },
+    });
     return;
   }
 
@@ -902,9 +922,9 @@ function bindEvents() {
   els.leaderboardBtn.addEventListener("click", () => setScreen("leaderboard"));
   els.promptStartBtn.addEventListener("click", startPromptedRun);
   els.promptBackBtn.addEventListener("click", updateIntroScreen);
-  els.retryBtn.addEventListener("click", updateIntroScreen);
+  els.retryBtn.addEventListener("click", handleStartFromIntro);
   els.resultLeaderboardBtn.addEventListener("click", () => setScreen("leaderboard"));
-  els.resultHomeBtn.addEventListener("click", updateIntroScreen);
+  els.resultSwitchUserBtn.addEventListener("click", clearSessionForNewUser);
   els.leaderboardBackBtn.addEventListener("click", updateIntroScreen);
   els.coachButton.addEventListener("click", () => {
     if (typeof state.coachAction === "function") {
