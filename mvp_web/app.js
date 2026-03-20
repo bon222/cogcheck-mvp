@@ -23,6 +23,7 @@ const els = {
   introTitle: document.getElementById("introTitle"),
   introCopy: document.getElementById("introCopy"),
   baselineBanner: document.getElementById("baselineBanner"),
+  baselineProgressWrap: document.getElementById("baselineProgressWrap"),
   baselineProgressFill: document.getElementById("baselineProgressFill"),
   baselineProgressText: document.getElementById("baselineProgressText"),
   baselineStatus: document.getElementById("baselineStatus"),
@@ -92,6 +93,8 @@ const state = {
   sleepHours: 8,
   coachAction: null,
   runArmed: false,
+  leaderboardReturnScreen: "intro",
+  lastTapAt: 0,
 };
 
 function setScreen(name) {
@@ -158,53 +161,58 @@ function updateBaselineProgress() {
   els.baselineProgressText.textContent = `${state.baselineCompleted} of ${BASELINE_REQUIRED} baseline runs complete`;
 }
 
+function setBaselineInfoVisible(visible) {
+  els.baselineBanner.classList.toggle("hidden", !visible);
+  els.baselineProgressWrap.classList.toggle("hidden", !visible);
+  els.baselineProgressText.classList.toggle("hidden", !visible);
+  els.baselineStatus.classList.toggle("hidden", !visible);
+  els.nextStep.classList.toggle("hidden", !visible);
+}
+
 function updateIntroScreen() {
   updateLoggedInUser();
-  updateBaselineProgress();
   if (!state.userId) {
     setScreen("login");
     return;
   }
 
-  if (state.baselineCompleted < BASELINE_REQUIRED) {
-    const left = BASELINE_REQUIRED - state.baselineCompleted;
-    els.introTitle.textContent = "Build Your Baseline";
-    els.introCopy.textContent = "We need 3 strong baseline runs before normal testing starts.";
-    els.baselineBanner.textContent = `We need you at peak cognitive function with no drinking and good sleep for ${left} more baseline run${left === 1 ? "" : "s"}.`;
-    els.baselineStatus.textContent = `Baseline progress: ${state.baselineCompleted}/${BASELINE_REQUIRED}`;
-    els.nextStep.textContent = "Next: start a baseline run.";
-    els.startBtn.textContent = "Start Baseline Run";
-  } else {
-    els.introTitle.textContent = "Normal Testing Ready";
-    els.introCopy.textContent = "Your baseline is complete. Normal runs will ask for drinking and sleep levels first.";
-    els.baselineBanner.textContent = "Baseline complete.";
-    els.baselineStatus.textContent = `Baseline locked at ${state.baselineCompleted}/${BASELINE_REQUIRED} runs.`;
-    els.nextStep.textContent = "Next: continue to the prompt and start a run.";
-    els.startBtn.textContent = "Continue to Prompt";
-  }
+  setBaselineInfoVisible(false);
+  els.introTitle.textContent = "Ready";
+  els.introCopy.textContent = "";
+  els.startBtn.textContent = "Play Game";
   setScreen("intro");
 }
 
 function refreshIntroCopyOnly() {
   if (!state.userId) return;
   updateLoggedInUser();
-  updateBaselineProgress();
-  if (state.baselineCompleted < BASELINE_REQUIRED) {
-    const left = BASELINE_REQUIRED - state.baselineCompleted;
-    els.introTitle.textContent = "Build Your Baseline";
-    els.introCopy.textContent = "We need 3 strong baseline runs before normal testing starts.";
-    els.baselineBanner.textContent = `We need you at peak cognitive function with no drinking and good sleep for ${left} more baseline run${left === 1 ? "" : "s"}.`;
-    els.baselineStatus.textContent = `Baseline progress: ${state.baselineCompleted}/${BASELINE_REQUIRED}`;
-    els.nextStep.textContent = "Next: start a baseline run.";
-    els.startBtn.textContent = "Start Baseline Run";
-  } else {
-    els.introTitle.textContent = "Normal Testing Ready";
-    els.introCopy.textContent = "Your baseline is complete. Normal runs will ask for drinking and sleep levels first.";
-    els.baselineBanner.textContent = "Baseline complete.";
-    els.baselineStatus.textContent = `Baseline locked at ${state.baselineCompleted}/${BASELINE_REQUIRED} runs.`;
-    els.nextStep.textContent = "Next: continue to the prompt and start a run.";
-    els.startBtn.textContent = "Continue to Prompt";
-  }
+  setBaselineInfoVisible(false);
+  els.introTitle.textContent = "Ready";
+  els.introCopy.textContent = "";
+  els.startBtn.textContent = "Play Game";
+}
+
+function openLeaderboard(fromScreen) {
+  state.leaderboardReturnScreen = fromScreen;
+  setScreen("leaderboard");
+}
+
+function returnFromLeaderboard() {
+  setScreen(state.leaderboardReturnScreen || "intro");
+}
+
+function bindTapAction(el, action) {
+  const handler = (evt) => {
+    const now = Date.now();
+    if (now - state.lastTapAt < 250) {
+      evt.preventDefault();
+      return;
+    }
+    state.lastTapAt = now;
+    action();
+  };
+  el.addEventListener("pointerup", handler);
+  el.addEventListener("click", (evt) => evt.preventDefault());
 }
 
 function renderLeaderboard(entries) {
@@ -965,13 +973,13 @@ function bindEvents() {
   });
   els.switchUserBtn.addEventListener("click", clearSessionForNewUser);
   els.startBtn.addEventListener("click", handleStartFromIntro);
-  els.leaderboardBtn.addEventListener("click", () => setScreen("leaderboard"));
+  bindTapAction(els.leaderboardBtn, () => openLeaderboard("intro"));
   els.promptStartBtn.addEventListener("click", startPromptedRun);
   els.promptBackBtn.addEventListener("click", updateIntroScreen);
-  els.retryBtn.addEventListener("click", handleStartFromIntro);
-  els.resultLeaderboardBtn.addEventListener("click", () => setScreen("leaderboard"));
-  els.resultSwitchUserBtn.addEventListener("click", clearSessionForNewUser);
-  els.leaderboardBackBtn.addEventListener("click", updateIntroScreen);
+  bindTapAction(els.retryBtn, handleStartFromIntro);
+  bindTapAction(els.resultLeaderboardBtn, () => openLeaderboard("result"));
+  bindTapAction(els.resultSwitchUserBtn, clearSessionForNewUser);
+  bindTapAction(els.leaderboardBackBtn, returnFromLeaderboard);
   els.gameLaunchBtn.addEventListener("click", launchArmedRun);
   els.coachButton.addEventListener("click", () => {
     if (typeof state.coachAction === "function") {

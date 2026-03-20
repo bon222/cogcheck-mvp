@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CogCheck MVP - Game 1</title>
-  <link rel="stylesheet" href="/styles.css?v=11" />
+  <link rel="stylesheet" href="/styles.css?v=13" />
 </head>
 <body>
   <main class="app-shell">
@@ -31,14 +31,14 @@
         <p class="screen-step">Step 2</p>
         <h2 id="introTitle">Ready to Play</h2>
         <p id="loggedInUser" class="logged-in">Not logged in.</p>
-        <p id="introCopy" class="screen-copy"></p>
-        <p id="baselineBanner" class="banner"></p>
-        <div class="progress-wrap" aria-label="Baseline progress">
+        <p id="introCopy" class="screen-copy hidden"></p>
+        <p id="baselineBanner" class="banner hidden"></p>
+        <div id="baselineProgressWrap" class="progress-wrap hidden" aria-label="Baseline progress">
           <div id="baselineProgressFill" class="progress-fill"></div>
         </div>
-        <p id="baselineProgressText" class="progress-text">0 of 3 complete</p>
-        <p id="baselineStatus" class="status"></p>
-        <p id="nextStep" class="next-step"></p>
+        <p id="baselineProgressText" class="progress-text hidden">0 of 3 complete</p>
+        <p id="baselineStatus" class="status hidden"></p>
+        <p id="nextStep" class="next-step hidden"></p>
         <div class="button-row">
           <button id="startBtn">Start</button>
           <button id="leaderboardBtn" class="secondary">Leaderboard</button>
@@ -144,6 +144,6 @@
     </div>
   </div>
 
-  <script src="/app.js?v=11"></script>
+  <script src="/app.js?v=13"></script>
 </body>
 </html>
