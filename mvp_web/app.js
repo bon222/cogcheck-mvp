@@ -249,6 +249,7 @@ function updateScoreModeCopy() {
 
 function getDisplayScoreMs(summary, durationMs) {
   if (state.scoreMode === "duration_ms") return durationMs;
+  if (summary && typeof summary.score_ms === "number") return summary.score_ms;
   if (summary && typeof summary.active_ball_time_ms === "number") return summary.active_ball_time_ms;
   return durationMs;
 }
@@ -390,8 +391,8 @@ function buildBalls() {
       r: 25,
       vx: (Math.random() * 160 + 120) * (Math.random() > 0.5 ? 1 : -1),
       vy: (Math.random() * 160 + 120) * (Math.random() > 0.5 ? 1 : -1),
-      spawnDelayMs: 0,
-      spawned: true,
+      spawnDelayMs: Math.floor(Math.random() * 2000),
+      spawned: false,
       completed: false,
       assignedCornerId: null,
     });
@@ -692,6 +693,8 @@ function buildSummary(durationMs) {
     (total, ball) => total + (ball.unresolved_time_ms || 0),
     0
   );
+  const missedTapPenaltyMs = emptyTaps * 200;
+  const scoreMs = activeBallTimeMs + missedTapPenaltyMs;
 
   return {
     balls_completed: ballsCompleted,
@@ -699,6 +702,8 @@ function buildSummary(durationMs) {
     total_events: state.events.length,
     duration_ms: durationMs,
     active_ball_time_ms: activeBallTimeMs,
+    missed_tap_penalty_ms: missedTapPenaltyMs,
+    score_ms: scoreMs,
     total_taps: totalTaps,
     empty_taps: emptyTaps,
     completion_order: state.completionLog,

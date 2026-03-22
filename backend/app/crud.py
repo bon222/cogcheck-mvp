@@ -29,6 +29,9 @@ def _attempt_score_ms(attempt: models.Attempt, score_mode: str) -> int | None:
     if score_mode == "duration_ms":
         return attempt.duration_ms
     if isinstance(attempt.summary, dict):
+        score = attempt.summary.get("score_ms")
+        if isinstance(score, int):
+            return score
         score = attempt.summary.get("active_ball_time_ms")
         if isinstance(score, int):
             return score
