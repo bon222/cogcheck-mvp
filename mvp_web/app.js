@@ -388,10 +388,10 @@ function buildBalls() {
       x,
       y,
       r: 25,
-      vx: (Math.random() * 170 + 80) * (Math.random() > 0.5 ? 1 : -1),
-      vy: (Math.random() * 170 + 80) * (Math.random() > 0.5 ? 1 : -1),
-      spawnDelayMs: Math.floor(Math.random() * 4200),
-      spawned: false,
+      vx: (Math.random() * 160 + 120) * (Math.random() > 0.5 ? 1 : -1),
+      vy: (Math.random() * 160 + 120) * (Math.random() > 0.5 ? 1 : -1),
+      spawnDelayMs: 0,
+      spawned: true,
       completed: false,
       assignedCornerId: null,
     });
@@ -727,6 +727,16 @@ function launchArmedRun() {
   els.gameLaunchBtn.blur();
   state.running = true;
   state.startTs = performance.now();
+  for (const ball of state.balls) {
+    appendEvent("ball_spawned", null, null, {
+      ball_id: ball.id,
+      spawn_delay_ms: 0,
+      x: ball.x,
+      y: ball.y,
+      vx: ball.vx,
+      vy: ball.vy,
+    });
+  }
   els.gameStatus.textContent = "Round live. Drag all four balls into open corners.";
   draw();
   state.timeoutId = setTimeout(() => finishGame(false), GAME_MS);
