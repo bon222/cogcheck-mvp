@@ -5,8 +5,7 @@ from . import models, schemas
 
 BASELINE_REQUIRED_ATTEMPTS = 3
 DEFAULT_SCORE_MODE = "active_ball_time_ms"
-SCORE_MAX_POINTS = 5000
-SCORE_POINT_DIVISOR = 20
+SCORE_MAX_POINTS = 1000
 
 
 def get_score_mode(db: Session) -> str:
@@ -47,10 +46,47 @@ def _attempt_raw_score_ms(attempt: models.Attempt, score_mode: str) -> int | Non
     return attempt.duration_ms
 
 
-def _score_points(raw_score_ms: int | None) -> int | None:
+def _average_first_touch_ms(summary: dict | None) -> int:
+    if not isinstance(summary, dict):
+        return 0
+    per_ball = summary.get("per_ball")
+    if not isinstance(per_ball, dict):
+        return 0
+    values: list[int] = []
+    for item in per_ball.values():
+        if isinstance(item, dict):
+            value = item.get("first_touch_ms")
+            if isinstance(value, int):
+                values.append(value)
+    if not values:
+        return 0
+    return round(sum(values) / len(values))
+
+
+def _saved_score_points(summary: dict | None) -> int | None:
+    if not isinstance(summary, dict):
+        return None
+    value = summary.get("score_points")
+    if isinstance(value, int):
+        return value
+    return None
+
+
+def _score_points(attempt: models.Attempt, score_mode: str) -> int | None:
+    saved_points = _saved_score_points(attempt.summary if isinstance(attempt.summary, dict) else None)
+    if saved_points is not None:
+        return saved_points
+
+    raw_score_ms = _attempt_raw_score_ms(attempt, score_mode)
     if raw_score_ms is None:
         return None
-    return max(0, round(SCORE_MAX_POINTS - (raw_score_ms / SCORE_POINT_DIVISOR)))
+    summary = attempt.summary if isinstance(attempt.summary, dict) else {}
+    empty_taps = summary.get("empty_taps") if isinstance(summary.get("empty_taps"), int) else 0
+    avg_first_touch_ms = _average_first_touch_ms(summary)
+
+    speed_component = max(0, 700 - round(raw_score_ms / 25))
+    control_component = max(0, 300 - (empty_taps * 25) - round(avg_first_touch_ms / 25))
+    return max(0, min(SCORE_MAX_POINTS, speed_component + control_component))
 
 
 def get_user(db: Session, user_id: str) -> models.User | None:
@@ -167,10 +203,7 @@ def get_user_stats(db: Session, user_id: str) -> schemas.UserStatsOut | None:
         .where(models.Attempt.user_id == user_id)
         .where(models.Attempt.success.is_(True))
     ).all()
-    scores = [
-        score for attempt in successful_attempts_rows
-        if (score := _score_points(_attempt_raw_score_ms(attempt, score_mode))) is not None
-    ]
+    scores = [score for attempt in successful_attempts_rows if (score := _score_points(attempt, score_mode)) is not None]
     best_score = max(scores) if scores else None
 
     return schemas.UserStatsOut(
@@ -193,10 +226,7 @@ def get_leaderboard(db: Session, limit: int = 10) -> list[schemas.LeaderboardEnt
             .where(models.Attempt.user_id == user.id)
             .where(models.Attempt.success.is_(True))
         ).all()
-        scores = [
-            score for attempt in attempts
-            if (score := _score_points(_attempt_raw_score_ms(attempt, score_mode))) is not None
-        ]
+        scores = [score for attempt in attempts if (score := _score_points(attempt, score_mode)) is not None]
         if scores:
             rows.append((user.first_name, user.last_name, max(scores)))
 
