@@ -1,7 +1,6 @@
 const BASELINE_REQUIRED = 3;
 const GAME_MS = 30000;
-const SCORE_MAX_POINTS = 5000;
-const SCORE_POINT_DIVISOR = 20;
+const SCORE_MAX_POINTS = 1000;
 const DEFAULT_BACKEND_URL =
   window.location.protocol.startsWith("http") && window.location.host
     ? window.location.origin
@@ -94,6 +93,7 @@ const state = {
   lastFrameTs: 0,
   completionLog: [],
   ballFirstTouchMs: {},
+  ballSpawnedAtMs: {},
   alcoholStatus: "no",
   sleepHours: 8,
   coachAction: null,
@@ -253,12 +253,26 @@ function getRawScoreMs(summary, durationMs) {
   return durationMs;
 }
 
-function scorePointsFromRawMs(rawScoreMs) {
-  return Math.max(0, Math.round(SCORE_MAX_POINTS - rawScoreMs / SCORE_POINT_DIVISOR));
+function averageFirstTouchMs(summary) {
+  if (!summary || !summary.per_ball) return 0;
+  const values = Object.values(summary.per_ball)
+    .map((ball) => (typeof ball.first_touch_ms === "number" ? ball.first_touch_ms : null))
+    .filter((value) => value !== null);
+  if (!values.length) return 0;
+  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
+}
+
+function scorePointsFromRound(summary, durationMs) {
+  const rawScoreMs = getRawScoreMs(summary, durationMs);
+  const emptyTaps = summary && typeof summary.empty_taps === "number" ? summary.empty_taps : 0;
+  const avgFirstTouchMs = averageFirstTouchMs(summary);
+  const speedComponent = Math.max(0, 700 - Math.round(rawScoreMs / 25));
+  const controlComponent = Math.max(0, 300 - emptyTaps * 25 - Math.round(avgFirstTouchMs / 25));
+  return Math.max(0, Math.min(SCORE_MAX_POINTS, speedComponent + controlComponent));
 }
 
 function getDisplayScore(summary, durationMs) {
-  return scorePointsFromRawMs(getRawScoreMs(summary, durationMs));
+  return scorePointsFromRound(summary, durationMs);
 }
 
 function getScoreModeAdminLabel(mode) {
@@ -400,9 +414,9 @@ function buildBalls() {
       x,
       y,
       r: 25,
-      vx: (Math.random() * 160 + 120) * (Math.random() > 0.5 ? 1 : -1),
-      vy: (Math.random() * 160 + 120) * (Math.random() > 0.5 ? 1 : -1),
-      spawnDelayMs: Math.floor(Math.random() * 3000),
+      vx: (Math.random() * 180 + 140) * (Math.random() > 0.5 ? 1 : -1),
+      vy: (Math.random() * 180 + 140) * (Math.random() > 0.5 ? 1 : -1),
+      spawnDelayMs: Math.floor(Math.random() * 2000),
       spawned: false,
       completed: false,
       assignedCornerId: null,
@@ -420,6 +434,7 @@ function resetGameState() {
   state.lastFrameTs = 0;
   state.completionLog = [];
   state.ballFirstTouchMs = {};
+  state.ballSpawnedAtMs = {};
   setupBaskets();
   buildBalls();
 }
@@ -510,9 +525,11 @@ function spawnBallsByElapsed(elapsedMs) {
   for (const ball of state.balls) {
     if (!ball.spawned && elapsedMs >= ball.spawnDelayMs) {
       ball.spawned = true;
+      state.ballSpawnedAtMs[ball.id] = elapsedMs;
       appendEvent("ball_spawned", null, null, {
         ball_id: ball.id,
         spawn_delay_ms: ball.spawnDelayMs,
+        actual_spawn_t_ms: elapsedMs,
         x: ball.x,
         y: ball.y,
         vx: ball.vx,
@@ -685,13 +702,15 @@ function buildSummary(durationMs) {
   const perBall = {};
   for (const ball of state.balls) {
     const completion = state.completionLog.find((item) => item.ball_id === ball.id) || null;
+    const actualSpawnMs = state.ballSpawnedAtMs[ball.id] ?? ball.spawnDelayMs;
     const unresolvedTimeMs =
       Math.max(
         0,
-        (completion ? completion.t_ms : durationMs) - ball.spawnDelayMs
+        (completion ? completion.t_ms : durationMs) - actualSpawnMs
       );
     perBall[ball.id] = {
       spawn_delay_ms: ball.spawnDelayMs,
+      actual_spawn_t_ms: actualSpawnMs,
       first_touch_ms: state.ballFirstTouchMs[ball.id] ?? null,
       completion_t_ms: completion ? completion.t_ms : null,
       completion_order: completion ? completion.order : null,
@@ -707,6 +726,14 @@ function buildSummary(durationMs) {
   const missedTapPenaltyMs = emptyTaps * 100;
   const scoreMs = activeBallTimeMs + missedTapPenaltyMs;
   const completionScoreMs = durationMs + missedTapPenaltyMs;
+  const scorePoints = getDisplayScore({
+    active_ball_time_ms: activeBallTimeMs,
+    missed_tap_penalty_ms: missedTapPenaltyMs,
+    score_ms: scoreMs,
+    completion_score_ms: completionScoreMs,
+    empty_taps: emptyTaps,
+    per_ball: perBall,
+  }, durationMs);
 
   return {
     balls_completed: ballsCompleted,
@@ -717,6 +744,8 @@ function buildSummary(durationMs) {
     missed_tap_penalty_ms: missedTapPenaltyMs,
     score_ms: scoreMs,
     completion_score_ms: completionScoreMs,
+    score_points: scorePoints,
+    score_mode_at_round: state.scoreMode,
     total_taps: totalTaps,
     empty_taps: emptyTaps,
     completion_order: state.completionLog,
@@ -745,6 +774,11 @@ function launchArmedRun() {
   els.gameLaunchBtn.blur();
   state.running = true;
   state.startTs = performance.now();
+  appendEvent("round_started", null, null, {
+    baseline_flag: state.pendingRunType === "baseline",
+    score_mode: state.scoreMode,
+    game_ms: GAME_MS,
+  });
   els.gameStatus.textContent = "Round live. Drag all four balls into open corners.";
   draw();
   state.timeoutId = setTimeout(() => finishGame(false), GAME_MS);
@@ -786,6 +820,22 @@ async function finishGame(success) {
   const durationMs = Math.max(1, Math.floor(state.endTs - state.startTs));
   const baselineFlag = state.pendingRunType === "baseline";
   const summary = buildSummary(durationMs);
+  state.events.push({
+    event_index: state.eventIndex++,
+    t_ms: durationMs,
+    event_type: "round_ended",
+    x: null,
+    y: null,
+    force: null,
+    radius: null,
+    payload: {
+      success,
+      duration_ms: durationMs,
+      score_points: summary.score_points,
+      balls_completed: summary.balls_completed,
+      empty_taps: summary.empty_taps,
+    },
+  });
   state.latestDurationMs = durationMs;
   state.latestSummary = summary;
   state.latestResultSuccess = success;
