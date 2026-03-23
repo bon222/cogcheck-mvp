@@ -5,6 +5,8 @@ from . import models, schemas
 
 BASELINE_REQUIRED_ATTEMPTS = 3
 DEFAULT_SCORE_MODE = "active_ball_time_ms"
+SCORE_MAX_POINTS = 5000
+SCORE_POINT_DIVISOR = 20
 
 
 def get_score_mode(db: Session) -> str:
@@ -25,17 +27,30 @@ def set_score_mode(db: Session, score_mode: str) -> str:
     return score_mode
 
 
-def _attempt_score_ms(attempt: models.Attempt, score_mode: str) -> int | None:
+def _attempt_raw_score_ms(attempt: models.Attempt, score_mode: str) -> int | None:
+    summary = attempt.summary if isinstance(attempt.summary, dict) else {}
     if score_mode == "duration_ms":
+        score = summary.get("completion_score_ms")
+        if isinstance(score, int):
+            return score
+        penalty = summary.get("missed_tap_penalty_ms")
+        if isinstance(penalty, int):
+            return attempt.duration_ms + penalty
         return attempt.duration_ms
-    if isinstance(attempt.summary, dict):
-        score = attempt.summary.get("score_ms")
-        if isinstance(score, int):
-            return score
-        score = attempt.summary.get("active_ball_time_ms")
-        if isinstance(score, int):
-            return score
+
+    score = summary.get("score_ms")
+    if isinstance(score, int):
+        return score
+    score = summary.get("active_ball_time_ms")
+    if isinstance(score, int):
+        return score
     return attempt.duration_ms
+
+
+def _score_points(raw_score_ms: int | None) -> int | None:
+    if raw_score_ms is None:
+        return None
+    return max(0, round(SCORE_MAX_POINTS - (raw_score_ms / SCORE_POINT_DIVISOR)))
 
 
 def get_user(db: Session, user_id: str) -> models.User | None:
@@ -152,20 +167,23 @@ def get_user_stats(db: Session, user_id: str) -> schemas.UserStatsOut | None:
         .where(models.Attempt.user_id == user_id)
         .where(models.Attempt.success.is_(True))
     ).all()
-    scores = [score for attempt in successful_attempts_rows if (score := _attempt_score_ms(attempt, score_mode)) is not None]
-    best_score_ms = min(scores) if scores else None
+    scores = [
+        score for attempt in successful_attempts_rows
+        if (score := _score_points(_attempt_raw_score_ms(attempt, score_mode))) is not None
+    ]
+    best_score = max(scores) if scores else None
 
     return schemas.UserStatsOut(
         user_id=user.id,
         first_name=user.first_name,
         last_name=user.last_name,
-        best_score_ms=best_score_ms,
+        best_score=best_score,
         total_attempts=total_attempts,
         successful_attempts=successful_attempts,
     )
 
 
-def get_leaderboard(db: Session, limit: int = 5) -> list[schemas.LeaderboardEntryOut]:
+def get_leaderboard(db: Session, limit: int = 10) -> list[schemas.LeaderboardEntryOut]:
     score_mode = get_score_mode(db)
     users = db.scalars(select(models.User)).all()
     rows: list[tuple[str, str, int]] = []
@@ -175,18 +193,21 @@ def get_leaderboard(db: Session, limit: int = 5) -> list[schemas.LeaderboardEntr
             .where(models.Attempt.user_id == user.id)
             .where(models.Attempt.success.is_(True))
         ).all()
-        scores = [score for attempt in attempts if (score := _attempt_score_ms(attempt, score_mode)) is not None]
+        scores = [
+            score for attempt in attempts
+            if (score := _score_points(_attempt_raw_score_ms(attempt, score_mode))) is not None
+        ]
         if scores:
-            rows.append((user.first_name, user.last_name, min(scores)))
+            rows.append((user.first_name, user.last_name, max(scores)))
 
-    rows.sort(key=lambda row: (row[2], row[1].lower(), row[0].lower()))
+    rows.sort(key=lambda row: (-row[2], row[1].lower(), row[0].lower()))
     rows = rows[:limit]
     return [
         schemas.LeaderboardEntryOut(
             rank=index + 1,
             first_name=row[0],
             last_name=row[1],
-            best_score_ms=row[2],
+            best_score=row[2],
         )
         for index, row in enumerate(rows)
     ]

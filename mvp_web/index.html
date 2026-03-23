@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CogCheck MVP - Game 1</title>
-  <link rel="stylesheet" href="/styles.css?v=20" />
+  <link rel="stylesheet" href="/styles.css?v=21" />
 </head>
 <body>
   <main class="app-shell">
@@ -16,7 +16,7 @@
       <div class="panel hero-panel">
         <p class="screen-step">Step 1</p>
         <h2>Sign In</h2>
-        <p class="screen-copy">Enter your name so your baseline and best score stay tied to you.</p>
+        <p class="screen-copy">Enter your name so your baseline and score stay tied to you.</p>
         <label>First Name <input id="firstName" type="text" autocomplete="given-name" /></label>
         <label>Last Name <input id="lastName" type="text" autocomplete="family-name" /></label>
         <div class="button-row">
@@ -50,8 +50,8 @@
     <section class="screen hidden" id="screenPrompt">
       <div class="panel hero-panel">
         <p class="screen-step">Step 3</p>
-        <h2>Before This Run</h2>
-        <p class="screen-copy">Log your current state, then the game begins immediately.</p>
+        <h2>Before This Round</h2>
+        <p class="screen-copy">Log your current state. Then aim for speed, accuracy, and as few mistakes as possible.</p>
         <label>Drinking level
           <select id="alcoholStatus">
             <option value="no">No alcohol</option>
@@ -63,7 +63,7 @@
           <input id="sleepHours" type="number" min="0" max="24" step="0.5" value="8" />
         </label>
         <div class="button-row">
-          <button id="promptStartBtn">Start Run</button>
+          <button id="promptStartBtn">Start Round</button>
           <button id="promptBackBtn" class="secondary">Back</button>
         </div>
         <p id="promptStatus" class="status"></p>
@@ -94,8 +94,8 @@
     <section class="screen hidden" id="screenResult">
       <div class="panel result-panel">
         <p class="screen-step">Result</p>
-        <h2 id="resultTitle">Run Complete</h2>
-        <p id="scoreValue" class="score-value">0 ms</p>
+        <h2 id="resultTitle">Round Complete</h2>
+        <p id="scoreValue" class="score-value">0</p>
         <p id="scoreContext" class="score-context"></p>
         <p id="personalBest" class="personal-best"></p>
         <div class="button-row">
@@ -109,7 +109,7 @@
     <section class="screen hidden" id="screenLeaderboard">
       <div class="panel hero-panel">
         <p class="screen-step">Leaderboard</p>
-        <h2>Top 5 Scores</h2>
+        <h2>Top 10 Scores</h2>
         <p id="leaderboardCopy" class="screen-copy"></p>
         <div id="leaderboardList" class="leaderboard-list"></div>
         <div class="button-row">
@@ -153,6 +153,6 @@
     </div>
   </div>
 
-  <script src="/app.js?v=20"></script>
+  <script src="/app.js?v=21"></script>
 </body>
 </html>

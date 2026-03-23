@@ -1,5 +1,7 @@
 const BASELINE_REQUIRED = 3;
 const GAME_MS = 30000;
+const SCORE_MAX_POINTS = 5000;
+const SCORE_POINT_DIVISOR = 20;
 const DEFAULT_BACKEND_URL =
   window.location.protocol.startsWith("http") && window.location.host
     ? window.location.origin
@@ -99,7 +101,7 @@ const state = {
   leaderboardReturnScreen: "intro",
   lastTapAt: 0,
   savingResult: false,
-  latestScoreMs: null,
+  latestScore: null,
   latestDurationMs: null,
   latestSummary: null,
   latestResultSuccess: null,
@@ -167,7 +169,7 @@ function resizeCanvas() {
 function updateBaselineProgress() {
   const percent = Math.max(0, Math.min(100, (state.baselineCompleted / BASELINE_REQUIRED) * 100));
   els.baselineProgressFill.style.width = `${percent}%`;
-  els.baselineProgressText.textContent = `${state.baselineCompleted} of ${BASELINE_REQUIRED} baseline runs complete`;
+  els.baselineProgressText.textContent = `${state.baselineCompleted} of ${BASELINE_REQUIRED} baseline rounds complete`;
 }
 
 function setBaselineInfoVisible(visible) {
@@ -235,23 +237,32 @@ function setResultActionsDisabled(disabled) {
   els.resultSwitchUserBtn.disabled = disabled;
 }
 
-function getScoreLabel() {
-  return state.scoreMode === "duration_ms" ? "completion time" : "active ball time";
-}
-
 function updateScoreModeCopy() {
   if (!els.leaderboardCopy) return;
-  els.leaderboardCopy.textContent =
-    state.scoreMode === "duration_ms"
-      ? "Lowest completion-time scores across all players."
-      : "Lowest active-ball-time scores across all players.";
+  els.leaderboardCopy.textContent = "Top 10 scores across all players.";
 }
 
-function getDisplayScoreMs(summary, durationMs) {
-  if (state.scoreMode === "duration_ms") return durationMs;
+function getRawScoreMs(summary, durationMs) {
+  if (state.scoreMode === "duration_ms") {
+    if (summary && typeof summary.completion_score_ms === "number") return summary.completion_score_ms;
+    if (summary && typeof summary.missed_tap_penalty_ms === "number") return durationMs + summary.missed_tap_penalty_ms;
+    return durationMs;
+  }
   if (summary && typeof summary.score_ms === "number") return summary.score_ms;
   if (summary && typeof summary.active_ball_time_ms === "number") return summary.active_ball_time_ms;
   return durationMs;
+}
+
+function scorePointsFromRawMs(rawScoreMs) {
+  return Math.max(0, Math.round(SCORE_MAX_POINTS - rawScoreMs / SCORE_POINT_DIVISOR));
+}
+
+function getDisplayScore(summary, durationMs) {
+  return scorePointsFromRawMs(getRawScoreMs(summary, durationMs));
+}
+
+function getScoreModeAdminLabel(mode) {
+  return mode === "duration_ms" ? "Completion time + mistakes" : "Active ball time + mistakes";
 }
 
 function renderLeaderboard(entries) {
@@ -265,7 +276,7 @@ function renderLeaderboard(entries) {
         <div class="leaderboard-row">
           <span class="leaderboard-rank">#${entry.rank}</span>
           <span class="leaderboard-name">${entry.first_name} ${entry.last_name}</span>
-          <span class="leaderboard-score">${entry.best_score_ms} ms</span>
+          <span class="leaderboard-score">${entry.best_score}</span>
         </div>
       `
     )
@@ -274,7 +285,7 @@ function renderLeaderboard(entries) {
 
 async function refreshLeaderboard() {
   try {
-    const res = await fetch(`${state.backendUrl}/leaderboard?limit=5`);
+    const res = await fetch(`${state.backendUrl}/leaderboard?limit=10`);
     const text = await res.text();
     const body = text ? JSON.parse(text) : [];
     if (!res.ok) throw new Error("Leaderboard fetch failed");
@@ -295,7 +306,7 @@ async function refreshUserStats() {
     const body = text ? JSON.parse(text) : {};
     if (!res.ok) throw new Error(body.detail || "Stats fetch failed");
     els.personalBest.textContent =
-      body.best_score_ms == null ? "No personal best yet." : `Your best ${getScoreLabel()}: ${body.best_score_ms} ms`;
+      body.best_score == null ? "No high score yet." : `Your high score: ${body.best_score}`;
   } catch {
     els.personalBest.textContent = "";
   }
@@ -391,7 +402,7 @@ function buildBalls() {
       r: 25,
       vx: (Math.random() * 160 + 120) * (Math.random() > 0.5 ? 1 : -1),
       vy: (Math.random() * 160 + 120) * (Math.random() > 0.5 ? 1 : -1),
-      spawnDelayMs: Math.floor(Math.random() * 2000),
+      spawnDelayMs: Math.floor(Math.random() * 3000),
       spawned: false,
       completed: false,
       assignedCornerId: null,
@@ -693,8 +704,9 @@ function buildSummary(durationMs) {
     (total, ball) => total + (ball.unresolved_time_ms || 0),
     0
   );
-  const missedTapPenaltyMs = emptyTaps * 200;
+  const missedTapPenaltyMs = emptyTaps * 100;
   const scoreMs = activeBallTimeMs + missedTapPenaltyMs;
+  const completionScoreMs = durationMs + missedTapPenaltyMs;
 
   return {
     balls_completed: ballsCompleted,
@@ -704,6 +716,7 @@ function buildSummary(durationMs) {
     active_ball_time_ms: activeBallTimeMs,
     missed_tap_penalty_ms: missedTapPenaltyMs,
     score_ms: scoreMs,
+    completion_score_ms: completionScoreMs,
     total_taps: totalTaps,
     empty_taps: emptyTaps,
     completion_order: state.completionLog,
@@ -715,11 +728,11 @@ function beginRun(runType) {
   state.pendingRunType = runType;
   resetGameState();
   state.runArmed = true;
-  els.gameRunType.textContent = runType === "baseline" ? "Baseline Run" : "Normal Run";
+  els.gameRunType.textContent = runType === "baseline" ? "Baseline Round" : "Round";
   els.gameStatus.textContent = "Press start when ready.";
-  els.gameStartTitle.textContent = runType === "baseline" ? "Baseline Run" : "Normal Run";
+  els.gameStartTitle.textContent = runType === "baseline" ? "Baseline Round" : "Round";
   els.gameStartCopy.textContent =
-    "Drag each moving ball into any open corner as fast as you can. The order does not matter.";
+    "Drag each moving ball into any open corner as quickly and accurately as you can. Fewer mistakes will help your score.";
   els.gameStartOverlay.classList.remove("hidden");
   setScreen("game");
   draw();
@@ -732,16 +745,6 @@ function launchArmedRun() {
   els.gameLaunchBtn.blur();
   state.running = true;
   state.startTs = performance.now();
-  for (const ball of state.balls) {
-    appendEvent("ball_spawned", null, null, {
-      ball_id: ball.id,
-      spawn_delay_ms: 0,
-      x: ball.x,
-      y: ball.y,
-      vx: ball.vx,
-      vy: ball.vy,
-    });
-  }
   els.gameStatus.textContent = "Round live. Drag all four balls into open corners.";
   draw();
   state.timeoutId = setTimeout(() => finishGame(false), GAME_MS);
@@ -749,23 +752,23 @@ function launchArmedRun() {
 }
 
 function showResult(durationMs, success, saving = true) {
-  const scoreMs = state.latestScoreMs ?? durationMs;
+  const score = state.latestScore ?? getDisplayScore(state.latestSummary, durationMs);
   setResultActionsDisabled(saving);
-  els.resultTitle.textContent = success ? "Run Complete" : "Run Timed Out";
-  els.scoreValue.textContent = `${scoreMs} ms`;
+  els.resultTitle.textContent = success ? "Round Complete" : "Round Timed Out";
+  els.scoreValue.textContent = `${score}`;
   els.scoreContext.textContent = saving
     ? success
-      ? `Round complete. Saving ${getScoreLabel()}...`
-      : `Time ran out. Saving recorded ${getScoreLabel()}...`
+      ? "Round complete. Saving your score..."
+      : "Time ran out. Saving your score..."
     : success
-      ? `${getScoreLabel()} saved. Lower is better.`
-      : `${getScoreLabel()} recorded. Lower is better.`;
+      ? "Score saved. Higher is better."
+      : "Score recorded. Higher is better.";
   setScreen("result");
 }
 
 function refreshVisibleResultScore() {
   if (state.currentScreen !== "result" || !state.latestSummary || state.latestDurationMs == null) return;
-  state.latestScoreMs = getDisplayScoreMs(state.latestSummary, state.latestDurationMs);
+  state.latestScore = getDisplayScore(state.latestSummary, state.latestDurationMs);
   showResult(state.latestDurationMs, Boolean(state.latestResultSuccess), state.savingResult);
 }
 
@@ -786,7 +789,7 @@ async function finishGame(success) {
   state.latestDurationMs = durationMs;
   state.latestSummary = summary;
   state.latestResultSuccess = success;
-  state.latestScoreMs = getDisplayScoreMs(summary, durationMs);
+  state.latestScore = getDisplayScore(summary, durationMs);
   draw();
   showResult(durationMs, success, true);
 
@@ -821,9 +824,7 @@ async function finishGame(success) {
     await refreshLeaderboard();
     showResult(durationMs, success, false);
   } catch (err) {
-    els.scoreContext.textContent = success
-      ? `Score ${state.latestScoreMs} ms, but saving failed.`
-      : `Score ${state.latestScoreMs} ms, but saving failed.`;
+    els.scoreContext.textContent = `Score ${state.latestScore}, but saving failed.`;
     els.gameStatus.textContent = `Submit error: ${err.message}`;
   }
 }
@@ -863,11 +864,11 @@ async function saveProfile() {
 
   if (!hasSeen("welcome")) {
     showCoach({
-      step: "How It Works",
-      title: "First build your baseline",
-      body:
-        "Complete 3 baseline runs while fully alert. After that, each run starts with drinking and sleep questions, then the game begins immediately and your score appears on its own result screen.",
-      buttonText: "Start",
+        step: "How It Works",
+        title: "Welcome to COGCHECK",
+        body:
+          "This project is testing whether performance on this game can help predict if someone has been drinking. Thanks for helping. First, we need 3 baseline rounds while you are well rested and have not been drinking. After that, each round records your current state and score. Try to beat the leaderboard.",
+        buttonText: "Continue",
       onConfirm: () => {
         markSeen("welcome");
         hideCoach();
@@ -896,9 +897,9 @@ function clearSessionForNewUser() {
   els.profileStatus.textContent = "";
   els.promptStatus.textContent = "";
   els.personalBest.textContent = "";
-  els.scoreValue.textContent = "0 ms";
+  els.scoreValue.textContent = "0";
   els.scoreContext.textContent = "";
-  state.latestScoreMs = null;
+  state.latestScore = null;
   state.latestDurationMs = null;
   state.latestSummary = null;
   state.latestResultSuccess = null;
@@ -920,16 +921,16 @@ function handleStartFromIntro() {
         step: "Baseline",
         title: "Peak cognitive function only",
         body:
-          "We need you to be at peak cognitive function with no drinking and good sleep 3 times when first playing the game. These runs become your personal reference point.",
+          "We need 3 baseline rounds while you are at peak cognitive function, with no drinking and good sleep. These rounds become your personal reference point.",
         buttonText: "Continue",
         onConfirm: () => {
           markSeen("baseline_guide");
           showCoach({
             step: "How to play",
-            title: "Corner Ball Checkpoint",
+            title: "How scoring works",
             body:
-              "You will see four moving balls and four open corners. Drag each ball into any corner as fast as you can. The order does not matter, but each corner can only be used once.",
-            buttonText: "Start Baseline Run",
+              "You will see four moving balls and four open corners. Drag each ball into any corner in any order. Move quickly, stay accurate, and avoid wasted taps if you want a stronger score.",
+            buttonText: "Start Baseline Round",
             onConfirm: () => {
               hideCoach();
               beginRun("baseline");
@@ -941,10 +942,10 @@ function handleStartFromIntro() {
     }
     showCoach({
       step: "How to play",
-      title: "Corner Ball Checkpoint",
+      title: "How scoring works",
       body:
-        "You will see four moving balls and four open corners. Drag each ball into any corner as fast as you can. The order does not matter, but each corner can only be used once.",
-      buttonText: "Start Baseline Run",
+        "You will see four moving balls and four open corners. Drag each ball into any corner in any order. Move quickly, stay accurate, and avoid wasted taps if you want a stronger score.",
+      buttonText: "Start Baseline Round",
       onConfirm: () => {
         hideCoach();
         beginRun("baseline");
@@ -1086,7 +1087,7 @@ async function saveScoreMode() {
     state.scoreMode = body.score_mode;
     els.scoreModeSelect.value = state.scoreMode;
     updateScoreModeCopy();
-    els.adminStatus.textContent = `Score mode saved: ${state.scoreMode}`;
+    els.adminStatus.textContent = `Score mode saved: ${getScoreModeAdminLabel(state.scoreMode)}.`;
     refreshVisibleResultScore();
     await refreshUserStats();
     await refreshLeaderboard();

@@ -69,7 +69,7 @@ class UserStatsOut(BaseModel):
     user_id: str
     first_name: str
     last_name: str
-    best_score_ms: int | None
+    best_score: int | None
     total_attempts: int
     successful_attempts: int
 
@@ -78,7 +78,7 @@ class LeaderboardEntryOut(BaseModel):
     rank: int
     first_name: str
     last_name: str
-    best_score_ms: int
+    best_score: int
 
 
 class ScoreModeOut(BaseModel):

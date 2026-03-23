@@ -161,7 +161,7 @@ def get_user_stats(user_id: str, db: Session = Depends(get_db)) -> schemas.UserS
 
 
 @app.get("/leaderboard", response_model=list[schemas.LeaderboardEntryOut])
-def get_leaderboard(limit: int = 5, db: Session = Depends(get_db)) -> list[schemas.LeaderboardEntryOut]:
+def get_leaderboard(limit: int = 10, db: Session = Depends(get_db)) -> list[schemas.LeaderboardEntryOut]:
     safe_limit = max(1, min(limit, 25))
     return crud.get_leaderboard(db, limit=safe_limit)
 
