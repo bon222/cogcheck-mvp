@@ -2,6 +2,7 @@ from pathlib import Path
 
 import csv
 import io
+import json
 import os
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -71,6 +72,14 @@ def require_admin_token(token: str | None) -> None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid admin token.")
 
 
+def csv_safe_value(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=True, separators=(",", ":"))
+    return str(value)
+
+
 @app.post("/admin/clear")
 def admin_clear(token: str | None = None, db: Session = Depends(get_db)) -> dict[str, str]:
     require_admin_token(token)
@@ -111,12 +120,13 @@ def admin_export(table_name: str, token: str | None = None, db: Session = Depend
     }
     result = db.execute(table_map[table_name].select())
     rows = result.fetchall()
-    headers = result.keys()
+    headers = list(result.keys())
 
     buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow(headers)
-    writer.writerows(rows)
+    writer = csv.DictWriter(buffer, fieldnames=headers, quoting=csv.QUOTE_ALL, lineterminator="\n")
+    writer.writeheader()
+    for row in rows:
+        writer.writerow({header: csv_safe_value(row._mapping.get(header)) for header in headers})
     buffer.seek(0)
 
     return StreamingResponse(
