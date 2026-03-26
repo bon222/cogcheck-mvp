@@ -6,6 +6,7 @@ from . import models, schemas
 BASELINE_REQUIRED_ATTEMPTS = 3
 DEFAULT_SCORE_MODE = "active_ball_time_ms"
 SCORE_MAX_POINTS = 1000
+VISIBLE_SCORE_BOOST_FACTOR = 1.08
 
 
 def get_score_mode(db: Session) -> str:
@@ -66,16 +67,27 @@ def _average_first_touch_ms(summary: dict | None) -> int:
 def _saved_score_points(summary: dict | None) -> int | None:
     if not isinstance(summary, dict):
         return None
+    visible_value = summary.get("visible_score_points")
+    if isinstance(visible_value, int):
+        return visible_value
     value = summary.get("score_points")
     if isinstance(value, int):
         return value
     return None
 
 
+def _boost_visible_score(score_points: int | None, alcohol_status: str | None) -> int | None:
+    if score_points is None:
+        return None
+    if alcohol_status in {"a_couple", "yes"}:
+        return min(SCORE_MAX_POINTS, round(score_points * VISIBLE_SCORE_BOOST_FACTOR))
+    return score_points
+
+
 def _score_points(attempt: models.Attempt, score_mode: str) -> int | None:
     saved_points = _saved_score_points(attempt.summary if isinstance(attempt.summary, dict) else None)
     if saved_points is not None:
-        return saved_points
+        return _boost_visible_score(saved_points, attempt.alcohol_status)
 
     raw_score_ms = _attempt_raw_score_ms(attempt, score_mode)
     if raw_score_ms is None:
@@ -86,7 +98,7 @@ def _score_points(attempt: models.Attempt, score_mode: str) -> int | None:
 
     speed_component = max(0, 700 - round(raw_score_ms / 25))
     control_component = max(0, 300 - (empty_taps * 25) - round(avg_first_touch_ms / 25))
-    return max(0, min(SCORE_MAX_POINTS, speed_component + control_component))
+    return _boost_visible_score(max(0, min(SCORE_MAX_POINTS, speed_component + control_component)), attempt.alcohol_status)
 
 
 def get_user(db: Session, user_id: str) -> models.User | None:

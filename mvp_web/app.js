@@ -1,6 +1,7 @@
 const BASELINE_REQUIRED = 3;
 const GAME_MS = 30000;
 const SCORE_MAX_POINTS = 1000;
+const VISIBLE_SCORE_BOOST_FACTOR = 1.08;
 const DEFAULT_BACKEND_URL =
   window.location.protocol.startsWith("http") && window.location.host
     ? window.location.origin
@@ -94,6 +95,11 @@ const state = {
   completionLog: [],
   ballFirstTouchMs: {},
   ballSpawnedAtMs: {},
+  ballFirstTouchPos: {},
+  ballVisibleCountAtFirstTouch: {},
+  ballNearestCornerAtFirstTouch: {},
+  ballDragStats: {},
+  falseTapDistances: [],
   alcoholStatus: "no",
   sleepHours: 8,
   coachAction: null,
@@ -253,6 +259,11 @@ function getRawScoreMs(summary, durationMs) {
   return durationMs;
 }
 
+function isBoostedRound(summary) {
+  const status = summary && summary.round_alcohol_status;
+  return status === "a_couple" || status === "yes";
+}
+
 function averageFirstTouchMs(summary) {
   if (!summary || !summary.per_ball) return 0;
   const values = Object.values(summary.per_ball)
@@ -272,7 +283,13 @@ function scorePointsFromRound(summary, durationMs) {
 }
 
 function getDisplayScore(summary, durationMs) {
-  return scorePointsFromRound(summary, durationMs);
+  if (summary && typeof summary.visible_score_points === "number") {
+    return summary.visible_score_points;
+  }
+  const baseScore = scorePointsFromRound(summary, durationMs);
+  return isBoostedRound(summary)
+    ? Math.min(SCORE_MAX_POINTS, Math.round(baseScore * VISIBLE_SCORE_BOOST_FACTOR))
+    : baseScore;
 }
 
 function getScoreModeAdminLabel(mode) {
@@ -435,12 +452,58 @@ function resetGameState() {
   state.completionLog = [];
   state.ballFirstTouchMs = {};
   state.ballSpawnedAtMs = {};
+  state.ballFirstTouchPos = {};
+  state.ballVisibleCountAtFirstTouch = {};
+  state.ballNearestCornerAtFirstTouch = {};
+  state.ballDragStats = {};
+  state.falseTapDistances = [];
   setupBaskets();
   buildBalls();
 }
 
 function getVisibleBaskets() {
   return state.baskets.filter((basket) => basket.visible);
+}
+
+function basketCenter(basket) {
+  return { x: basket.x + basket.w / 2, y: basket.y + basket.h / 2 };
+}
+
+function distanceBetweenPoints(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function getVisibleBallCount() {
+  return state.balls.filter((ball) => ball.spawned && !ball.completed).length;
+}
+
+function getNearestVisibleBasket(point) {
+  const visible = getVisibleBaskets();
+  if (!visible.length) return null;
+  let nearest = null;
+  let nearestDistance = Infinity;
+  for (const basket of visible) {
+    const center = basketCenter(basket);
+    const distance = distanceBetweenPoints(point, center);
+    if (distance < nearestDistance) {
+      nearest = basket;
+      nearestDistance = distance;
+    }
+  }
+  return nearest ? { basket: nearest, distance_px: nearestDistance } : null;
+}
+
+function getNearestActiveBallDistance(point) {
+  const activeBalls = state.balls.filter((ball) => ball.spawned && !ball.completed);
+  if (!activeBalls.length) return null;
+  let nearestDistance = Infinity;
+  for (const ball of activeBalls) {
+    const distance = distanceBetweenPoints(point, { x: ball.x, y: ball.y });
+    if (distance < nearestDistance) nearestDistance = distance;
+  }
+  return nearestDistance;
 }
 
 function getBallById(id) {
@@ -636,7 +699,16 @@ function pointerDown(evt) {
   const ball = pickBallAt(x, y);
   if (!ball) {
     state.freePointerId = evt.pointerId;
-    appendEvent("touch_down", x, y, { ball_id: null, hit: false });
+    const nearestBallDistancePx = getNearestActiveBallDistance({ x, y });
+    if (typeof nearestBallDistancePx === "number") {
+      state.falseTapDistances.push(nearestBallDistancePx);
+    }
+    appendEvent("touch_down", x, y, {
+      ball_id: null,
+      hit: false,
+      nearest_ball_distance_px: nearestBallDistancePx,
+      visible_ball_count: getVisibleBallCount(),
+    });
     return;
   }
 
@@ -645,8 +717,24 @@ function pointerDown(evt) {
   if (els.canvas.setPointerCapture) els.canvas.setPointerCapture(evt.pointerId);
   if (state.ballFirstTouchMs[ball.id] === undefined) {
     state.ballFirstTouchMs[ball.id] = Math.max(0, Math.floor(performance.now() - state.startTs));
+    state.ballFirstTouchPos[ball.id] = { x, y };
+    state.ballVisibleCountAtFirstTouch[ball.id] = getVisibleBallCount();
+    const nearest = getNearestVisibleBasket({ x, y });
+    state.ballNearestCornerAtFirstTouch[ball.id] = nearest
+      ? { corner_id: nearest.basket.id, distance_px: nearest.distance_px }
+      : null;
+    state.ballDragStats[ball.id] = {
+      path_length_px: 0,
+      correction_count: 0,
+      last_point: { x, y },
+      last_vector: null,
+    };
   }
-  appendEvent("touch_down", x, y, { ball_id: ball.id, hit: true });
+  appendEvent("touch_down", x, y, {
+    ball_id: ball.id,
+    hit: true,
+    visible_ball_count: getVisibleBallCount(),
+  });
 }
 
 function pointerMove(evt) {
@@ -655,6 +743,30 @@ function pointerMove(evt) {
   if (state.activePointerId === evt.pointerId) {
     const ball = getActiveBall();
     if (!ball || ball.completed) return;
+    const dragStats = state.ballDragStats[ball.id];
+    if (dragStats && dragStats.last_point) {
+      const nextPoint = { x, y };
+      const dx = nextPoint.x - dragStats.last_point.x;
+      const dy = nextPoint.y - dragStats.last_point.y;
+      const segmentLength = Math.sqrt(dx * dx + dy * dy);
+      dragStats.path_length_px += segmentLength;
+      if (segmentLength > 0) {
+        const currentVector = { x: dx, y: dy };
+        if (dragStats.last_vector) {
+          const dot = dragStats.last_vector.x * currentVector.x + dragStats.last_vector.y * currentVector.y;
+          const prevMag = Math.sqrt(dragStats.last_vector.x ** 2 + dragStats.last_vector.y ** 2);
+          const currMag = Math.sqrt(currentVector.x ** 2 + currentVector.y ** 2);
+          if (prevMag > 0 && currMag > 0) {
+            const cosine = dot / (prevMag * currMag);
+            if (cosine < 0.6) {
+              dragStats.correction_count += 1;
+            }
+          }
+        }
+        dragStats.last_vector = currentVector;
+      }
+      dragStats.last_point = nextPoint;
+    }
     ball.x = Math.max(ball.r, Math.min(els.canvas.width - ball.r, x));
     ball.y = Math.max(ball.r, Math.min(els.canvas.height - ball.r, y));
     appendEvent("touch_move", x, y, { ball_id: ball.id, hit: true });
@@ -703,6 +815,14 @@ function buildSummary(durationMs) {
   for (const ball of state.balls) {
     const completion = state.completionLog.find((item) => item.ball_id === ball.id) || null;
     const actualSpawnMs = state.ballSpawnedAtMs[ball.id] ?? ball.spawnDelayMs;
+    const firstTouchPos = state.ballFirstTouchPos[ball.id] ?? null;
+    const chosenBasket = completion ? state.baskets.find((basket) => basket.id === completion.corner_id) : null;
+    const chosenCornerCenter = chosenBasket ? basketCenter(chosenBasket) : null;
+    const nearestCornerAtFirstTouch = state.ballNearestCornerAtFirstTouch[ball.id] ?? null;
+    const dragStats = state.ballDragStats[ball.id] ?? null;
+    const straightLineDistancePx =
+      firstTouchPos && chosenCornerCenter ? distanceBetweenPoints(firstTouchPos, chosenCornerCenter) : null;
+    const pathLengthPx = dragStats ? dragStats.path_length_px : null;
     const unresolvedTimeMs =
       Math.max(
         0,
@@ -712,9 +832,21 @@ function buildSummary(durationMs) {
       spawn_delay_ms: ball.spawnDelayMs,
       actual_spawn_t_ms: actualSpawnMs,
       first_touch_ms: state.ballFirstTouchMs[ball.id] ?? null,
+      first_touch_x: firstTouchPos ? firstTouchPos.x : null,
+      first_touch_y: firstTouchPos ? firstTouchPos.y : null,
+      visible_ball_count_at_first_touch: state.ballVisibleCountAtFirstTouch[ball.id] ?? null,
+      nearest_corner_id_at_first_touch: nearestCornerAtFirstTouch ? nearestCornerAtFirstTouch.corner_id : null,
+      nearest_corner_distance_px_at_first_touch: nearestCornerAtFirstTouch ? nearestCornerAtFirstTouch.distance_px : null,
       completion_t_ms: completion ? completion.t_ms : null,
       completion_order: completion ? completion.order : null,
       corner_id: completion ? completion.corner_id : null,
+      chose_nearest_corner:
+        completion && nearestCornerAtFirstTouch ? completion.corner_id === nearestCornerAtFirstTouch.corner_id : null,
+      path_length_px: pathLengthPx,
+      straight_line_distance_px: straightLineDistancePx,
+      drag_efficiency_ratio:
+        pathLengthPx && straightLineDistancePx && pathLengthPx > 0 ? straightLineDistancePx / pathLengthPx : null,
+      correction_count: dragStats ? dragStats.correction_count : 0,
       unresolved_time_ms: unresolvedTimeMs,
     };
   }
@@ -746,8 +878,18 @@ function buildSummary(durationMs) {
     completion_score_ms: completionScoreMs,
     score_points: scorePoints,
     score_mode_at_round: state.scoreMode,
+    round_alcohol_status: state.pendingRunType === "baseline" ? null : state.alcoholStatus,
+    visible_score_points:
+      state.alcoholStatus === "a_couple" || state.alcoholStatus === "yes"
+        ? Math.min(SCORE_MAX_POINTS, Math.round(scorePoints * VISIBLE_SCORE_BOOST_FACTOR))
+        : scorePoints,
     total_taps: totalTaps,
     empty_taps: emptyTaps,
+    mean_false_tap_distance_px:
+      state.falseTapDistances.length
+        ? state.falseTapDistances.reduce((sum, value) => sum + value, 0) / state.falseTapDistances.length
+        : null,
+    min_false_tap_distance_px: state.falseTapDistances.length ? Math.min(...state.falseTapDistances) : null,
     completion_order: state.completionLog,
     per_ball: perBall,
   };
