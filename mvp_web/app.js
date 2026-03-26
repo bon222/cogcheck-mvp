@@ -100,6 +100,7 @@ const state = {
   ballNearestCornerAtFirstTouch: {},
   ballDragStats: {},
   falseTapDistances: [],
+  hitOffsets: [],
   alcoholStatus: "no",
   sleepHours: 8,
   coachAction: null,
@@ -457,6 +458,7 @@ function resetGameState() {
   state.ballNearestCornerAtFirstTouch = {};
   state.ballDragStats = {};
   state.falseTapDistances = [];
+  state.hitOffsets = [];
   setupBaskets();
   buildBalls();
 }
@@ -730,10 +732,13 @@ function pointerDown(evt) {
       last_vector: null,
     };
   }
+  const hitOffsetPx = distanceBetweenPoints({ x, y }, { x: ball.x, y: ball.y });
+  state.hitOffsets.push(hitOffsetPx);
   appendEvent("touch_down", x, y, {
     ball_id: ball.id,
     hit: true,
     visible_ball_count: getVisibleBallCount(),
+    touch_offset_from_ball_center_px: hitOffsetPx,
   });
 }
 
@@ -810,6 +815,15 @@ function buildSummary(durationMs) {
   const emptyTaps = state.events.filter(
     (event) => event.event_type === "touch_down" && event.payload && event.payload.hit === false
   ).length;
+  const hitTaps = totalTaps - emptyTaps;
+  const touchDownTimes = state.events
+    .filter((event) => event.event_type === "touch_down")
+    .map((event) => event.t_ms)
+    .sort((a, b) => a - b);
+  const idleGapsMs = [];
+  for (let i = 1; i < touchDownTimes.length; i += 1) {
+    idleGapsMs.push(Math.max(0, touchDownTimes[i] - touchDownTimes[i - 1]));
+  }
 
   const perBall = {};
   for (const ball of state.balls) {
@@ -823,23 +837,38 @@ function buildSummary(durationMs) {
     const straightLineDistancePx =
       firstTouchPos && chosenCornerCenter ? distanceBetweenPoints(firstTouchPos, chosenCornerCenter) : null;
     const pathLengthPx = dragStats ? dragStats.path_length_px : null;
+    const spawnToFirstTouchMs =
+      typeof state.ballFirstTouchMs[ball.id] === "number" ? Math.max(0, state.ballFirstTouchMs[ball.id] - actualSpawnMs) : null;
+    const firstTouchToCompletionMs =
+      completion && typeof state.ballFirstTouchMs[ball.id] === "number"
+        ? Math.max(0, completion.t_ms - state.ballFirstTouchMs[ball.id])
+        : null;
+    const chosenCornerDistancePx =
+      firstTouchPos && chosenCornerCenter ? distanceBetweenPoints(firstTouchPos, chosenCornerCenter) : null;
+    const speedPxPerSec = Math.sqrt(ball.vx ** 2 + ball.vy ** 2);
     const unresolvedTimeMs =
       Math.max(
         0,
         (completion ? completion.t_ms : durationMs) - actualSpawnMs
       );
     perBall[ball.id] = {
+      spawn_x: ball.x,
+      spawn_y: ball.y,
       spawn_delay_ms: ball.spawnDelayMs,
       actual_spawn_t_ms: actualSpawnMs,
+      speed_px_per_s: speedPxPerSec,
       first_touch_ms: state.ballFirstTouchMs[ball.id] ?? null,
       first_touch_x: firstTouchPos ? firstTouchPos.x : null,
       first_touch_y: firstTouchPos ? firstTouchPos.y : null,
       visible_ball_count_at_first_touch: state.ballVisibleCountAtFirstTouch[ball.id] ?? null,
       nearest_corner_id_at_first_touch: nearestCornerAtFirstTouch ? nearestCornerAtFirstTouch.corner_id : null,
       nearest_corner_distance_px_at_first_touch: nearestCornerAtFirstTouch ? nearestCornerAtFirstTouch.distance_px : null,
+      spawn_to_first_touch_ms: spawnToFirstTouchMs,
       completion_t_ms: completion ? completion.t_ms : null,
       completion_order: completion ? completion.order : null,
       corner_id: completion ? completion.corner_id : null,
+      first_touch_to_completion_ms: firstTouchToCompletionMs,
+      chosen_corner_distance_px: chosenCornerDistancePx,
       chose_nearest_corner:
         completion && nearestCornerAtFirstTouch ? completion.corner_id === nearestCornerAtFirstTouch.corner_id : null,
       path_length_px: pathLengthPx,
@@ -858,6 +887,47 @@ function buildSummary(durationMs) {
   const missedTapPenaltyMs = emptyTaps * 100;
   const scoreMs = activeBallTimeMs + missedTapPenaltyMs;
   const completionScoreMs = durationMs + missedTapPenaltyMs;
+  const perBallValues = Object.values(perBall);
+  const completedBalls = perBallValues.filter((ball) => ball.completion_t_ms != null);
+  const meanSpawnToFirstTouchMs = completedBalls.length
+    ? completedBalls
+        .map((ball) => ball.spawn_to_first_touch_ms)
+        .filter((value) => typeof value === "number")
+        .reduce((sum, value, _, arr) => sum + value / arr.length, 0)
+    : null;
+  const meanFirstTouchToCompletionMs = completedBalls.length
+    ? completedBalls
+        .map((ball) => ball.first_touch_to_completion_ms)
+        .filter((value) => typeof value === "number")
+        .reduce((sum, value, _, arr) => sum + value / arr.length, 0)
+    : null;
+  const meanDragEfficiencyRatio = completedBalls.length
+    ? completedBalls
+        .map((ball) => ball.drag_efficiency_ratio)
+        .filter((value) => typeof value === "number")
+        .reduce((sum, value, _, arr) => sum + value / arr.length, 0)
+    : null;
+  const nearestCornerChoiceRate = completedBalls.length
+    ? completedBalls
+        .map((ball) => (ball.chose_nearest_corner === true ? 1 : 0))
+        .reduce((sum, value, _, arr) => sum + value / arr.length, 0)
+    : null;
+  const meanVisibleBallCountAtFirstTouch = completedBalls.length
+    ? completedBalls
+        .map((ball) => ball.visible_ball_count_at_first_touch)
+        .filter((value) => typeof value === "number")
+        .reduce((sum, value, _, arr) => sum + value / arr.length, 0)
+    : null;
+  const meanBallSpeedPxPerSec = perBallValues.length
+    ? perBallValues
+        .map((ball) => ball.speed_px_per_s)
+        .reduce((sum, value, _, arr) => sum + value / arr.length, 0)
+    : null;
+  const meanCorrectionCountPerBall = completedBalls.length
+    ? completedBalls
+        .map((ball) => ball.correction_count)
+        .reduce((sum, value, _, arr) => sum + value / arr.length, 0)
+    : null;
   const scorePoints = getDisplayScore({
     active_ball_time_ms: activeBallTimeMs,
     missed_tap_penalty_ms: missedTapPenaltyMs,
@@ -884,12 +954,29 @@ function buildSummary(durationMs) {
         ? Math.min(SCORE_MAX_POINTS, Math.round(scorePoints * VISIBLE_SCORE_BOOST_FACTOR))
         : scorePoints,
     total_taps: totalTaps,
+    hit_taps: hitTaps,
     empty_taps: emptyTaps,
+    tap_accuracy: totalTaps > 0 ? hitTaps / totalTaps : null,
+    max_idle_gap_ms: idleGapsMs.length ? Math.max(...idleGapsMs) : null,
+    mean_idle_gap_ms: idleGapsMs.length ? idleGapsMs.reduce((sum, value) => sum + value, 0) / idleGapsMs.length : null,
+    mean_spawn_to_first_touch_ms: meanSpawnToFirstTouchMs,
+    mean_first_touch_to_completion_ms: meanFirstTouchToCompletionMs,
+    mean_drag_efficiency_ratio: meanDragEfficiencyRatio,
+    nearest_corner_choice_rate: nearestCornerChoiceRate,
+    mean_visible_ball_count_at_first_touch: meanVisibleBallCountAtFirstTouch,
+    mean_ball_speed_px_per_s: meanBallSpeedPxPerSec,
+    mean_correction_count_per_ball: meanCorrectionCountPerBall,
     mean_false_tap_distance_px:
       state.falseTapDistances.length
         ? state.falseTapDistances.reduce((sum, value) => sum + value, 0) / state.falseTapDistances.length
         : null,
     min_false_tap_distance_px: state.falseTapDistances.length ? Math.min(...state.falseTapDistances) : null,
+    false_tap_near_ball_rate:
+      state.falseTapDistances.length
+        ? state.falseTapDistances.filter((value) => value <= 60).length / state.falseTapDistances.length
+        : null,
+    mean_hit_offset_px:
+      state.hitOffsets.length ? state.hitOffsets.reduce((sum, value) => sum + value, 0) / state.hitOffsets.length : null,
     completion_order: state.completionLog,
     per_ball: perBall,
   };
