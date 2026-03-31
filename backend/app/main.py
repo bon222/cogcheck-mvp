@@ -44,6 +44,11 @@ def get_score_mode(db: Session = Depends(get_db)) -> schemas.ScoreModeOut:
     return schemas.ScoreModeOut(score_mode=crud.get_score_mode(db))
 
 
+@app.get("/collection-mode", response_model=schemas.CollectionModeOut)
+def get_collection_mode(db: Session = Depends(get_db)) -> schemas.CollectionModeOut:
+    return schemas.CollectionModeOut(collection_mode=crud.get_collection_mode(db))
+
+
 @app.get("/")
 def web_home() -> FileResponse:
     response = FileResponse(WEB_DIR / "index.html")
@@ -141,6 +146,13 @@ def admin_set_score_mode(score_mode: schemas.ScoreMode, token: str | None = None
     require_admin_token(token)
     saved = crud.set_score_mode(db, score_mode)
     return schemas.ScoreModeOut(score_mode=saved)
+
+
+@app.post("/admin/collection-mode", response_model=schemas.CollectionModeOut)
+def admin_set_collection_mode(collection_mode: schemas.CollectionMode, token: str | None = None, db: Session = Depends(get_db)) -> schemas.CollectionModeOut:
+    require_admin_token(token)
+    saved = crud.set_collection_mode(db, collection_mode)
+    return schemas.CollectionModeOut(collection_mode=saved)
 
 
 @app.post("/users/register", response_model=schemas.UserOut)

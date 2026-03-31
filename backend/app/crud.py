@@ -5,6 +5,7 @@ from . import models, schemas
 
 BASELINE_REQUIRED_ATTEMPTS = 3
 DEFAULT_SCORE_MODE = "active_ball_time_ms"
+DEFAULT_COLLECTION_MODE = "experimental"
 SCORE_MAX_POINTS = 1000
 VISIBLE_SCORE_BOOST_FACTOR = 1.08
 
@@ -25,6 +26,32 @@ def set_score_mode(db: Session, score_mode: str) -> str:
         setting.value = score_mode
     db.commit()
     return score_mode
+
+
+def get_collection_mode(db: Session) -> str:
+    setting = db.get(models.AppSetting, "collection_mode")
+    if setting is None:
+        return DEFAULT_COLLECTION_MODE
+    return setting.value
+
+
+def set_collection_mode(db: Session, collection_mode: str) -> str:
+    setting = db.get(models.AppSetting, "collection_mode")
+    if setting is None:
+        setting = models.AppSetting(key="collection_mode", value=collection_mode)
+        db.add(setting)
+    else:
+        setting.value = collection_mode
+    db.commit()
+    return collection_mode
+
+
+def _attempt_collection_mode(attempt: models.Attempt) -> str:
+    summary = attempt.summary if isinstance(attempt.summary, dict) else {}
+    mode = summary.get("collection_mode_at_round")
+    if mode in {"experimental", "real"}:
+        return mode
+    return DEFAULT_COLLECTION_MODE
 
 
 def _attempt_raw_score_ms(attempt: models.Attempt, score_mode: str) -> int | None:
@@ -210,12 +237,18 @@ def get_user_stats(db: Session, user_id: str) -> schemas.UserStatsOut | None:
         or 0
     )
     score_mode = get_score_mode(db)
+    collection_mode = get_collection_mode(db)
     successful_attempts_rows = db.scalars(
         select(models.Attempt)
         .where(models.Attempt.user_id == user_id)
         .where(models.Attempt.success.is_(True))
     ).all()
-    scores = [score for attempt in successful_attempts_rows if (score := _score_points(attempt, score_mode)) is not None]
+    scores = [
+        score
+        for attempt in successful_attempts_rows
+        if _attempt_collection_mode(attempt) == collection_mode
+        if (score := _score_points(attempt, score_mode)) is not None
+    ]
     best_score = max(scores) if scores else None
 
     return schemas.UserStatsOut(
@@ -230,6 +263,7 @@ def get_user_stats(db: Session, user_id: str) -> schemas.UserStatsOut | None:
 
 def get_leaderboard(db: Session, limit: int = 10) -> list[schemas.LeaderboardEntryOut]:
     score_mode = get_score_mode(db)
+    collection_mode = get_collection_mode(db)
     users = db.scalars(select(models.User)).all()
     rows: list[tuple[str, str, int]] = []
     for user in users:
@@ -238,7 +272,12 @@ def get_leaderboard(db: Session, limit: int = 10) -> list[schemas.LeaderboardEnt
             .where(models.Attempt.user_id == user.id)
             .where(models.Attempt.success.is_(True))
         ).all()
-        scores = [score for attempt in attempts if (score := _score_points(attempt, score_mode)) is not None]
+        scores = [
+            score
+            for attempt in attempts
+            if _attempt_collection_mode(attempt) == collection_mode
+            if (score := _score_points(attempt, score_mode)) is not None
+        ]
         if scores:
             rows.append((user.first_name, user.last_name, max(scores)))
 

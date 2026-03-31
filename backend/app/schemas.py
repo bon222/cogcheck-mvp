@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 AlcoholStatus = Literal["no", "a_couple", "yes"]
 ScoreMode = Literal["active_ball_time_ms", "duration_ms"]
+CollectionMode = Literal["experimental", "real"]
 
 
 class UserCreate(BaseModel):
@@ -83,3 +84,7 @@ class LeaderboardEntryOut(BaseModel):
 
 class ScoreModeOut(BaseModel):
     score_mode: ScoreMode
+
+
+class CollectionModeOut(BaseModel):
+    collection_mode: CollectionMode

@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CogCheck MVP - Game 1</title>
-  <link rel="stylesheet" href="/styles.css?v=21" />
+  <link rel="stylesheet" href="/styles.css?v=22" />
 </head>
 <body>
   <main class="app-shell">
@@ -128,8 +128,15 @@
           <option value="duration_ms">Completion time</option>
         </select>
       </label>
+      <label>Collection Mode
+        <select id="collectionModeSelect">
+          <option value="experimental">Experimental</option>
+          <option value="real">Real</option>
+        </select>
+      </label>
       <div class="button-row">
         <button id="saveScoreModeBtn">Save Score Mode</button>
+        <button id="saveCollectionModeBtn">Save Collection Mode</button>
       </div>
       <div class="button-grid">
         <button id="clearDbBtn" class="danger">Clear Database</button>
@@ -153,6 +160,6 @@
     </div>
   </div>
 
-  <script src="/app.js?v=21"></script>
+  <script src="/app.js?v=22"></script>
 </body>
 </html>

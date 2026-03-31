@@ -57,6 +57,8 @@ const els = {
   adminToken: document.getElementById("adminToken"),
   scoreModeSelect: document.getElementById("scoreModeSelect"),
   saveScoreModeBtn: document.getElementById("saveScoreModeBtn"),
+  collectionModeSelect: document.getElementById("collectionModeSelect"),
+  saveCollectionModeBtn: document.getElementById("saveCollectionModeBtn"),
   clearDbBtn: document.getElementById("clearDbBtn"),
   resetDbBtn: document.getElementById("resetDbBtn"),
   downloadUsers: document.getElementById("downloadUsers"),
@@ -113,6 +115,7 @@ const state = {
   latestSummary: null,
   latestResultSuccess: null,
   scoreMode: "active_ball_time_ms",
+  collectionMode: "experimental",
 };
 
 function setScreen(name) {
@@ -297,6 +300,10 @@ function getScoreModeAdminLabel(mode) {
   return mode === "duration_ms" ? "Completion time + mistakes" : "Active ball time + mistakes";
 }
 
+function getCollectionModeAdminLabel(mode) {
+  return mode === "real" ? "Real" : "Experimental";
+}
+
 function renderLeaderboard(entries) {
   if (!entries.length) {
     els.leaderboardList.innerHTML = '<div class="leaderboard-row"><span class="leaderboard-rank">-</span><span class="leaderboard-name">No scores yet</span><span class="leaderboard-score">-</span></div>';
@@ -357,6 +364,20 @@ async function refreshScoreMode() {
     state.scoreMode = "active_ball_time_ms";
     if (els.scoreModeSelect) els.scoreModeSelect.value = state.scoreMode;
     updateScoreModeCopy();
+  }
+}
+
+async function refreshCollectionMode() {
+  try {
+    const res = await fetch(`${state.backendUrl}/collection-mode`);
+    const text = await res.text();
+    const body = text ? JSON.parse(text) : {};
+    if (!res.ok) throw new Error(body.detail || "Collection mode fetch failed");
+    state.collectionMode = body.collection_mode || "experimental";
+    if (els.collectionModeSelect) els.collectionModeSelect.value = state.collectionMode;
+  } catch {
+    state.collectionMode = "experimental";
+    if (els.collectionModeSelect) els.collectionModeSelect.value = state.collectionMode;
   }
 }
 
@@ -948,6 +969,7 @@ function buildSummary(durationMs) {
     completion_score_ms: completionScoreMs,
     score_points: scorePoints,
     score_mode_at_round: state.scoreMode,
+    collection_mode_at_round: state.collectionMode,
     round_alcohol_status: state.pendingRunType === "baseline" ? null : state.alcoholStatus,
     visible_score_points:
       state.alcoholStatus === "a_couple" || state.alcoholStatus === "yes"
@@ -1375,6 +1397,36 @@ async function saveScoreMode() {
   }
 }
 
+async function saveCollectionMode() {
+  const token = els.adminToken.value.trim();
+  if (!token) {
+    els.adminStatus.textContent = "Enter admin token first.";
+    return;
+  }
+  try {
+    const mode = els.collectionModeSelect.value;
+    const res = await fetch(
+      `${state.backendUrl}/admin/collection-mode?token=${encodeURIComponent(token)}&collection_mode=${encodeURIComponent(mode)}`,
+      { method: "POST" }
+    );
+    const text = await res.text();
+    let body = {};
+    try {
+      body = text ? JSON.parse(text) : {};
+    } catch {
+      body = { detail: text || "Save collection mode failed" };
+    }
+    if (!res.ok) throw new Error(body.detail || "Save collection mode failed");
+    state.collectionMode = body.collection_mode;
+    els.collectionModeSelect.value = state.collectionMode;
+    els.adminStatus.textContent = `Collection mode saved: ${getCollectionModeAdminLabel(state.collectionMode)}.`;
+    await refreshUserStats();
+    await refreshLeaderboard();
+  } catch (err) {
+    els.adminStatus.textContent = `Collection mode error: ${err.message}`;
+  }
+}
+
 function bindEvents() {
   els.saveProfileBtn.addEventListener("click", () => {
     saveProfile().catch((err) => {
@@ -1407,6 +1459,7 @@ function bindEvents() {
   els.clearDbBtn.addEventListener("click", clearDatabase);
   els.resetDbBtn.addEventListener("click", resetDatabase);
   els.saveScoreModeBtn.addEventListener("click", saveScoreMode);
+  els.saveCollectionModeBtn.addEventListener("click", saveCollectionMode);
   els.downloadUsers.addEventListener("click", () => downloadCsv("users"));
   els.downloadAttempts.addEventListener("click", () => downloadCsv("attempts"));
   els.downloadRaw.addEventListener("click", () => downloadCsv("raw_events"));
@@ -1428,6 +1481,7 @@ async function init() {
   els.lastName.value = localStorage.getItem("lastName") || "";
   updateLoggedInUser();
   await refreshScoreMode();
+  await refreshCollectionMode();
 
   if (!state.userId) {
     setScreen("login");
