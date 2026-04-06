@@ -1,7 +1,9 @@
 const BASELINE_REQUIRED = 3;
 const GAME_MS = 30000;
 const SCORE_MAX_POINTS = 1000;
+const SCORE_MIN_POINTS = 25;
 const VISIBLE_SCORE_BOOST_FACTOR = 1.08;
+const BASKET_CAPTURE_MARGIN = 14;
 const DEFAULT_BACKEND_URL =
   window.location.protocol.startsWith("http") && window.location.host
     ? window.location.origin
@@ -100,6 +102,7 @@ const state = {
   ballFirstTouchPos: {},
   ballVisibleCountAtFirstTouch: {},
   ballNearestCornerAtFirstTouch: {},
+  ballSpawnPos: {},
   ballDragStats: {},
   falseTapDistances: [],
   hitOffsets: [],
@@ -283,7 +286,8 @@ function scorePointsFromRound(summary, durationMs) {
   const avgFirstTouchMs = averageFirstTouchMs(summary);
   const speedComponent = Math.max(0, 700 - Math.round(rawScoreMs / 25));
   const controlComponent = Math.max(0, 300 - emptyTaps * 25 - Math.round(avgFirstTouchMs / 25));
-  return Math.max(0, Math.min(SCORE_MAX_POINTS, speedComponent + controlComponent));
+  const totalScore = speedComponent + controlComponent;
+  return Math.max(SCORE_MIN_POINTS, Math.min(SCORE_MAX_POINTS, totalScore));
 }
 
 function getDisplayScore(summary, durationMs) {
@@ -477,6 +481,7 @@ function resetGameState() {
   state.ballFirstTouchPos = {};
   state.ballVisibleCountAtFirstTouch = {};
   state.ballNearestCornerAtFirstTouch = {};
+  state.ballSpawnPos = {};
   state.ballDragStats = {};
   state.falseTapDistances = [];
   state.hitOffsets = [];
@@ -490,6 +495,25 @@ function getVisibleBaskets() {
 
 function basketCenter(basket) {
   return { x: basket.x + basket.w / 2, y: basket.y + basket.h / 2 };
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function nearestPointInBasketCaptureZone(point, basket) {
+  return {
+    x: clamp(point.x, basket.x - BASKET_CAPTURE_MARGIN, basket.x + basket.w + BASKET_CAPTURE_MARGIN),
+    y: clamp(point.y, basket.y - BASKET_CAPTURE_MARGIN, basket.y + basket.h + BASKET_CAPTURE_MARGIN),
+  };
+}
+
+function normalizePoint(point) {
+  if (!point) return null;
+  return {
+    x: Number((point.x / els.canvas.width).toFixed(4)),
+    y: Number((point.y / els.canvas.height).toFixed(4)),
+  };
 }
 
 function distanceBetweenPoints(a, b) {
@@ -612,6 +636,7 @@ function spawnBallsByElapsed(elapsedMs) {
     if (!ball.spawned && elapsedMs >= ball.spawnDelayMs) {
       ball.spawned = true;
       state.ballSpawnedAtMs[ball.id] = elapsedMs;
+      state.ballSpawnPos[ball.id] = { x: ball.x, y: ball.y };
       appendEvent("ball_spawned", null, null, {
         ball_id: ball.id,
         spawn_delay_ms: ball.spawnDelayMs,
@@ -644,13 +669,12 @@ function updateBallMotion(deltaSec) {
 }
 
 function findBasketForBall(ball) {
-  const margin = 14;
   return getVisibleBaskets().find(
     (basket) =>
-      ball.x >= basket.x - margin &&
-      ball.x <= basket.x + basket.w + margin &&
-      ball.y >= basket.y - margin &&
-      ball.y <= basket.y + basket.h + margin
+      ball.x >= basket.x - BASKET_CAPTURE_MARGIN &&
+      ball.x <= basket.x + basket.w + BASKET_CAPTURE_MARGIN &&
+      ball.y >= basket.y - BASKET_CAPTURE_MARGIN &&
+      ball.y <= basket.y + basket.h + BASKET_CAPTURE_MARGIN
   );
 }
 
@@ -850,37 +874,47 @@ function buildSummary(durationMs) {
   for (const ball of state.balls) {
     const completion = state.completionLog.find((item) => item.ball_id === ball.id) || null;
     const actualSpawnMs = state.ballSpawnedAtMs[ball.id] ?? ball.spawnDelayMs;
+    const spawnPos = state.ballSpawnPos[ball.id] ?? { x: ball.x, y: ball.y };
     const firstTouchPos = state.ballFirstTouchPos[ball.id] ?? null;
     const chosenBasket = completion ? state.baskets.find((basket) => basket.id === completion.corner_id) : null;
-    const chosenCornerCenter = chosenBasket ? basketCenter(chosenBasket) : null;
+    const chosenCornerTarget = firstTouchPos && chosenBasket ? nearestPointInBasketCaptureZone(firstTouchPos, chosenBasket) : null;
     const nearestCornerAtFirstTouch = state.ballNearestCornerAtFirstTouch[ball.id] ?? null;
     const dragStats = state.ballDragStats[ball.id] ?? null;
     const straightLineDistancePx =
-      firstTouchPos && chosenCornerCenter ? distanceBetweenPoints(firstTouchPos, chosenCornerCenter) : null;
-    const pathLengthPx = dragStats ? dragStats.path_length_px : null;
+      firstTouchPos && chosenCornerTarget ? distanceBetweenPoints(firstTouchPos, chosenCornerTarget) : null;
+    const rawPathLengthPx = dragStats ? dragStats.path_length_px : null;
+    const pathLengthPx =
+      rawPathLengthPx != null && straightLineDistancePx != null
+        ? Math.max(rawPathLengthPx, straightLineDistancePx)
+        : rawPathLengthPx;
     const spawnToFirstTouchMs =
       typeof state.ballFirstTouchMs[ball.id] === "number" ? Math.max(0, state.ballFirstTouchMs[ball.id] - actualSpawnMs) : null;
     const firstTouchToCompletionMs =
       completion && typeof state.ballFirstTouchMs[ball.id] === "number"
         ? Math.max(0, completion.t_ms - state.ballFirstTouchMs[ball.id])
         : null;
-    const chosenCornerDistancePx =
-      firstTouchPos && chosenCornerCenter ? distanceBetweenPoints(firstTouchPos, chosenCornerCenter) : null;
+    const chosenCornerDistancePx = straightLineDistancePx;
     const speedPxPerSec = Math.sqrt(ball.vx ** 2 + ball.vy ** 2);
     const unresolvedTimeMs =
       Math.max(
         0,
         (completion ? completion.t_ms : durationMs) - actualSpawnMs
       );
+    const spawnPosNorm = normalizePoint(spawnPos);
+    const firstTouchPosNorm = normalizePoint(firstTouchPos);
     perBall[ball.id] = {
-      spawn_x: ball.x,
-      spawn_y: ball.y,
+      spawn_x: spawnPos.x,
+      spawn_y: spawnPos.y,
+      spawn_x_norm: spawnPosNorm ? spawnPosNorm.x : null,
+      spawn_y_norm: spawnPosNorm ? spawnPosNorm.y : null,
       spawn_delay_ms: ball.spawnDelayMs,
       actual_spawn_t_ms: actualSpawnMs,
       speed_px_per_s: speedPxPerSec,
       first_touch_ms: state.ballFirstTouchMs[ball.id] ?? null,
       first_touch_x: firstTouchPos ? firstTouchPos.x : null,
       first_touch_y: firstTouchPos ? firstTouchPos.y : null,
+      first_touch_x_norm: firstTouchPosNorm ? firstTouchPosNorm.x : null,
+      first_touch_y_norm: firstTouchPosNorm ? firstTouchPosNorm.y : null,
       visible_ball_count_at_first_touch: state.ballVisibleCountAtFirstTouch[ball.id] ?? null,
       nearest_corner_id_at_first_touch: nearestCornerAtFirstTouch ? nearestCornerAtFirstTouch.corner_id : null,
       nearest_corner_distance_px_at_first_touch: nearestCornerAtFirstTouch ? nearestCornerAtFirstTouch.distance_px : null,
@@ -890,6 +924,8 @@ function buildSummary(durationMs) {
       corner_id: completion ? completion.corner_id : null,
       first_touch_to_completion_ms: firstTouchToCompletionMs,
       chosen_corner_distance_px: chosenCornerDistancePx,
+      chosen_corner_target_x: chosenCornerTarget ? chosenCornerTarget.x : null,
+      chosen_corner_target_y: chosenCornerTarget ? chosenCornerTarget.y : null,
       chose_nearest_corner:
         completion && nearestCornerAtFirstTouch ? completion.corner_id === nearestCornerAtFirstTouch.corner_id : null,
       path_length_px: pathLengthPx,
@@ -960,9 +996,14 @@ function buildSummary(durationMs) {
 
   return {
     balls_completed: ballsCompleted,
-    completion_ratio: ballsCompleted / 4,
     total_events: state.events.length,
     duration_ms: durationMs,
+    canvas_width_px: els.canvas.width,
+    canvas_height_px: els.canvas.height,
+    viewport_width_px: window.innerWidth,
+    viewport_height_px: window.innerHeight,
+    device_pixel_ratio: window.devicePixelRatio || 1,
+    basket_capture_margin_px: BASKET_CAPTURE_MARGIN,
     active_ball_time_ms: activeBallTimeMs,
     missed_tap_penalty_ms: missedTapPenaltyMs,
     score_ms: scoreMs,

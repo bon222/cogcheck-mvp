@@ -7,6 +7,7 @@ BASELINE_REQUIRED_ATTEMPTS = 3
 DEFAULT_SCORE_MODE = "active_ball_time_ms"
 DEFAULT_COLLECTION_MODE = "experimental"
 SCORE_MAX_POINTS = 1000
+SCORE_MIN_POINTS = 25
 VISIBLE_SCORE_BOOST_FACTOR = 1.08
 
 
@@ -125,7 +126,9 @@ def _score_points(attempt: models.Attempt, score_mode: str) -> int | None:
 
     speed_component = max(0, 700 - round(raw_score_ms / 25))
     control_component = max(0, 300 - (empty_taps * 25) - round(avg_first_touch_ms / 25))
-    return _boost_visible_score(max(0, min(SCORE_MAX_POINTS, speed_component + control_component)), attempt.alcohol_status)
+    total_score = speed_component + control_component
+    bounded_score = max(SCORE_MIN_POINTS, min(SCORE_MAX_POINTS, total_score))
+    return _boost_visible_score(bounded_score, attempt.alcohol_status)
 
 
 def get_user(db: Session, user_id: str) -> models.User | None:
